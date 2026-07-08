@@ -1,0 +1,57 @@
+#!/usr/bin/env bash
+#
+# Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
+# is overwritten on the next apply.
+#
+# Health check: silent when healthy, loud on failure (non-zero exit + message
+# on stderr, which lands in the journal). Checks the manager service, the
+# rootless docker daemon (as the runner user, from a non-login context), and
+# checkout staleness — a dead pull credential must not leave the host applying
+# stale main behind a green apply timer.
+set -uo pipefail
+
+status=0
+err() {
+  echo "rootless-gitlab-runner-healthcheck: $*" >&2
+  status=1
+}
+
+as_runner() {
+  runuser -u 'gitlab-runner' -- env \
+    "XDG_RUNTIME_DIR=/run/user/4242" \
+    "DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/4242/bus" \
+    "DOCKER_HOST=unix:///run/user/4242/docker.sock" \
+    "$@"
+}
+
+systemctl is-active --quiet 'gitlab-runner' \
+  || err "manager service 'gitlab-runner' is not active"
+
+# The apply timer drives self-update; a disabled or stopped timer silently
+# halts convergence and would otherwise surface only later as checkout
+# staleness. Assert it is both enabled (survives reboot) and armed now.
+systemctl is-enabled --quiet gitlab-runner-apply.timer \
+  || err "apply timer 'gitlab-runner-apply.timer' is not enabled (self-update halted)"
+systemctl is-active --quiet gitlab-runner-apply.timer \
+  || err "apply timer 'gitlab-runner-apply.timer' is not active (self-update halted)"
+
+as_runner systemctl --user is-active --quiet docker \
+  || err "rootless docker user unit is not active"
+
+# setuptool check is prerequisites-only; docker info is the daemon health probe.
+as_runner docker info >/dev/null 2>&1 \
+  || err "docker info failed as gitlab-runner"
+
+# SHA staleness (mandatory): compare the local checkout against the remote
+# head without mutating the checkout. An unreachable origin is itself a
+# failure — that is exactly the dead-credential case.
+local_sha="$(git -C '/opt/gitlab-runner-infra' rev-parse HEAD 2>/dev/null)" \
+  || err "cannot read local checkout SHA"
+remote_sha="$(git -C '/opt/gitlab-runner-infra' ls-remote origin 'refs/heads/main' 2>/dev/null | cut -f1)"
+if [[ -z "${remote_sha}" ]]; then
+  err "cannot reach origin to compare main (dead pull credential?)"
+elif [[ "${local_sha}" != "${remote_sha}" ]]; then
+  err "checkout is stale: local ${local_sha} != origin/main ${remote_sha}"
+fi
+
+exit "${status}"

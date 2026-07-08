@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+#
+# Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
+# is overwritten on the next apply.
+#
+# Applies the control-repo checkout with isolated Puppet state so it never
+# collides with a central Puppet agent. Used by gitlab-runner-apply.service and
+# for manual runs; extra arguments (e.g. --noop) are forwarded to puppet apply.
+# With --detailed-exitcodes the exit status is 0 (no changes), 2 (changes
+# applied) or 4/6 (failures); the service treats 2 as success.
+set -euo pipefail
+
+if [[ "${EUID}" -ne 0 ]]; then
+  echo "rootless-gitlab-runner-apply: must run as root" >&2
+  exit 1
+fi
+
+# Deliver module updates pinned in the consumer's Puppetfile each tick.
+# Without a Puppetfile (module vendored in the checkout) this is a no-op.
+if [[ -f "/opt/gitlab-runner-infra/Puppetfile" ]]; then
+  r10k puppetfile install \
+    --puppetfile "/opt/gitlab-runner-infra/Puppetfile" \
+    --moduledir "/opt/gitlab-runner-infra/puppet/modules"
+fi
+
+exec puppet apply \
+  --confdir "/etc/gitlab-runner-infra/puppet" \
+  --vardir "/var/lib/grunner-puppet" \
+  --modulepath "/opt/gitlab-runner-infra/puppet/modules" \
+  --hiera_config "/opt/gitlab-runner-infra/puppet/hiera.yaml" \
+  --detailed-exitcodes \
+  "$@" \
+  "/opt/gitlab-runner-infra/puppet/manifests/site.pp"

@@ -1,0 +1,50 @@
+# Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file is
+# overwritten on the next apply.
+concurrent = 1
+check_interval = 0
+connection_max_age = "15m0s"
+shutdown_timeout = 0
+
+[[runners]]
+  name = "socket-runner"
+  url = "https://gitlab.example.org/"
+  id = 42
+  token = "glrt-GOLDEN-TOKEN-A"
+  executor = "docker"
+  # Example socket runner
+  environment = ["BUILDX_NO_DEFAULT_ATTESTATIONS=1"]
+  [runners.cache]
+    MaxUploadedArchiveSize = 100
+  [runners.docker]
+    tls_verify = false
+    image = "ubuntu:22.04"
+    privileged = true
+    disable_entrypoint_overwrite = true
+    oom_kill_disable = true
+    disable_cache = true
+    volumes = ["/cache", "/run/user/4242/docker.sock:/var/run/docker.sock"]
+    security_opt = ["seccomp=unconfined"]
+    allowed_images = ["ruby:*", "python:*"]
+    allowed_pull_policies = ["always", "if-not-present"]
+    shm_size = 300000000
+    helper_image = "gitlab/gitlab-runner-helper:x86_64-v16.11.0"
+    network_mtu = 1400
+
+[[runners]]
+  name = "remote-runner"
+  url = "https://gitlab.example.org/"
+  token = "glrt-GOLDEN-TOKEN-B"
+  executor = "docker"
+  [runners.cache]
+    MaxUploadedArchiveSize = 0
+  [runners.docker]
+    host = "tcp://docker-daemon:2375"
+    tls_verify = true
+    image = "alpine:3.20"
+    privileged = false
+    disable_entrypoint_overwrite = false
+    oom_kill_disable = false
+    disable_cache = false
+    volumes = []
+    shm_size = 0
+    network_mtu = 0
