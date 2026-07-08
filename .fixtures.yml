@@ -1,0 +1,19 @@
+---
+# Spec fixture modules, fetched into spec/fixtures/modules/ by
+# `puppet-fixtures install` (via `just test`) so rspec-puppet can compile
+# catalogs. This module itself needs no entry — it is symlinked in
+# automatically under its metadata.json name.
+#
+# Deliberately `repositories:` (git), not the usual `forge_modules:`:
+# puppet_fixtures <= 2.2.2 crashes on Forge downloads (Dir.mktmpdir without
+# require 'tmpdir'; unfixed upstream as of 2026-07). Revert to forge_modules
+# only once a fixed release ships. Refs pinned to release tags; bump
+# deliberately.
+fixtures:
+  repositories:
+    apt:
+      repo: https://github.com/puppetlabs/puppetlabs-apt.git
+      ref: v11.3.2
+    stdlib:
+      repo: https://github.com/puppetlabs/puppetlabs-stdlib.git
+      ref: v10.0.1
