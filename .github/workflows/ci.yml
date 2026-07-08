@@ -1,0 +1,143 @@
+---
+# Validation workflow: static checks on the module code. The jobs never touch
+# a host, so they run on plain hosted runners. Every job enters the committed
+# Nix dev shell (flake.lock pins the environment, Gemfile.lock pins the Ruby
+# tools) and runs the same justfile recipes contributors run locally, so CI
+# cannot drift from a local run by construction.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  # Allow running the gate on demand from the Actions tab.
+  workflow_dispatch:
+  # Callable as the release workflow's validation gate (see release.yml).
+  workflow_call:
+
+# Cancel superseded runs on a branch/PR, so a new push does not queue behind an
+# outdated run — but never cancel a push to main (only in-flight PR runs).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least privilege: the jobs only read the checkout. No job writes to the repo,
+# and checkouts do not persist the token (see persist-credentials below).
+permissions:
+  contents: read
+
+jobs:
+  puppet-validate:
+    name: Puppet syntax, lint, metadata + docs
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        # flakes + nix-command are enabled by default in install-nix-action v31,
+        # so no extra_nix_config is needed.
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3  # v31.10.6
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569  # v7.0.2
+        with:
+          # Key on every Nix file, not flake.lock alone: a dev-shell package
+          # change (flake.nix) without an input bump must re-save the cache.
+          primary-key: nix-${{ runner.os }}-validate-${{ hashFiles('**/*.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-validate-
+          # GC build-time garbage before saving so the three job caches stay near
+          # the live closure instead of summing past the 10 GB repo cache cap.
+          gc-max-store-size-linux: 1G
+
+      - name: Cache gems
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: vendor/bundle
+          # Gems install under an ABI-versioned path, so a Ruby bump (a flake.lock
+          # change) must miss the cache; key on the Ruby series too, not just
+          # Gemfile.lock. restore-keys lets a Gemfile.lock change reuse the last
+          # good bundle for the same Ruby instead of reinstalling from scratch.
+          key: gems-${{ runner.os }}-${{ hashFiles('flake.lock', 'Gemfile.lock') }}
+          restore-keys: |
+            gems-${{ runner.os }}-
+
+      - name: Validate, lint, metadata, docs freshness
+        run: >-
+          nix develop --command sh -c
+          'just install && just validate && just lint puppet
+          && just lint metadata && just _docs-check'
+
+  puppet-unit:
+    name: Unit tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        # flakes + nix-command are enabled by default in install-nix-action v31,
+        # so no extra_nix_config is needed.
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3  # v31.10.6
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569  # v7.0.2
+        with:
+          # Key on every Nix file, not flake.lock alone: a dev-shell package
+          # change (flake.nix) without an input bump must re-save the cache.
+          primary-key: nix-${{ runner.os }}-unit-${{ hashFiles('**/*.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-unit-
+          # GC build-time garbage before saving so the three job caches stay near
+          # the live closure instead of summing past the 10 GB repo cache cap.
+          gc-max-store-size-linux: 1G
+
+      - name: Cache gems
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: vendor/bundle
+          # Gems install under an ABI-versioned path, so a Ruby bump (a flake.lock
+          # change) must miss the cache; key on the Ruby series too, not just
+          # Gemfile.lock. restore-keys lets a Gemfile.lock change reuse the last
+          # good bundle for the same Ruby instead of reinstalling from scratch.
+          key: gems-${{ runner.os }}-${{ hashFiles('flake.lock', 'Gemfile.lock') }}
+          restore-keys: |
+            gems-${{ runner.os }}-
+
+      - name: Run unit tests
+        run: nix develop --command sh -c 'just install && just test'
+
+  yaml-lint:
+    name: YAML + Nix lint
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Install Nix
+        # flakes + nix-command are enabled by default in install-nix-action v31,
+        # so no extra_nix_config is needed.
+        uses: cachix/install-nix-action@8aa03977d8d733052d78f4e008a241fd1dbf36b3  # v31.10.6
+
+      - name: Cache Nix store
+        uses: nix-community/cache-nix-action@7df957e333c1e5da7721f60227dbba6d06080569  # v7.0.2
+        with:
+          # Key on every Nix file, not flake.lock alone: a dev-shell package
+          # change (flake.nix) without an input bump must re-save the cache.
+          primary-key: nix-${{ runner.os }}-yaml-${{ hashFiles('**/*.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-yaml-
+          # GC build-time garbage before saving so the three job caches stay near
+          # the live closure instead of summing past the 10 GB repo cache cap.
+          gc-max-store-size-linux: 1G
+
+      - name: Lint YAML
+        run: nix develop --command just lint yaml
+
+      - name: Check Nix formatting
+        run: nix develop --command just lint nix
