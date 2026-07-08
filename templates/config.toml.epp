@@ -1,0 +1,72 @@
+<%- | Integer $concurrent,
+      Integer $check_interval,
+      String  $connection_max_age,
+      Integer $shutdown_timeout,
+      Array   $runners,
+      Optional[String] $docker_socket_path,
+| -%>
+# Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file is
+# overwritten on the next apply.
+concurrent = <%= $concurrent %>
+check_interval = <%= $check_interval %>
+connection_max_age = "<%= rootless_gitlab_runner::toml_escape($connection_max_age) %>"
+shutdown_timeout = <%= $shutdown_timeout %>
+<% $runners.each |$r| { -%>
+<%-   $base_vols = $r['volumes'] =~ Array ? { true => $r['volumes'], default => [] } -%>
+<%-   $vols = $r['socket_mount'] == true ? {
+        true    => $base_vols + ["${docker_socket_path}:/var/run/docker.sock"],
+        default => $base_vols,
+      } -%>
+<%-   $tls_verify = $r['tls_verify'] =~ Boolean ? { true => $r['tls_verify'], default => false } -%>
+<%-   $privileged = $r['privileged'] =~ Boolean ? { true => $r['privileged'], default => false } -%>
+<%-   $deow = $r['disable_entrypoint_overwrite'] =~ Boolean ? { true => $r['disable_entrypoint_overwrite'], default => false } -%>
+<%-   $oom = $r['oom_kill_disable'] =~ Boolean ? { true => $r['oom_kill_disable'], default => false } -%>
+<%-   $dcache = $r['disable_cache'] =~ Boolean ? { true => $r['disable_cache'], default => false } -%>
+<%-   $shm = $r['shm_size'] =~ Integer ? { true => $r['shm_size'], default => 0 } -%>
+<%-   $mtu = $r['network_mtu'] =~ Integer ? { true => $r['network_mtu'], default => 0 } -%>
+
+[[runners]]
+  name = "<%= rootless_gitlab_runner::toml_escape($r['name']) %>"
+  url = "<%= rootless_gitlab_runner::toml_escape($r['url']) %>"
+<%-   if $r['id'] =~ Integer { -%>
+  id = <%= $r['id'] %>
+<%-   } -%>
+  token = "<%= rootless_gitlab_runner::toml_escape($r['token']) %>"
+  executor = "<%= rootless_gitlab_runner::toml_escape($r['executor']) %>"
+<%-   if $r['comment'] =~ String and !$r['comment'].empty { -%>
+  # <%= $r['comment'].regsubst('[\r\n]+', ' ', 'G') %>
+<%-   } -%>
+<%-   if $r['environment'] =~ Array and !$r['environment'].empty { -%>
+  environment = [<%= $r['environment'].map |$e| { "\"${rootless_gitlab_runner::toml_escape($e)}\"" }.join(', ') %>]
+<%-   } -%>
+<%-   if $r['cache'] =~ Hash { -%>
+<%-     $max_upload = $r['cache']['MaxUploadedArchiveSize'] =~ Integer ? { true => $r['cache']['MaxUploadedArchiveSize'], default => 0 } -%>
+  [runners.cache]
+    MaxUploadedArchiveSize = <%= $max_upload %>
+<%-   } -%>
+  [runners.docker]
+<%-   if $r['host'] =~ String and !$r['host'].empty { -%>
+    host = "<%= rootless_gitlab_runner::toml_escape($r['host']) %>"
+<%-   } -%>
+    tls_verify = <%= $tls_verify %>
+    image = "<%= rootless_gitlab_runner::toml_escape($r['image']) %>"
+    privileged = <%= $privileged %>
+    disable_entrypoint_overwrite = <%= $deow %>
+    oom_kill_disable = <%= $oom %>
+    disable_cache = <%= $dcache %>
+    volumes = [<%= $vols.map |$v| { "\"${rootless_gitlab_runner::toml_escape($v)}\"" }.join(', ') %>]
+<%-   if $r['security_opt'] =~ Array and !$r['security_opt'].empty { -%>
+    security_opt = [<%= $r['security_opt'].map |$s| { "\"${rootless_gitlab_runner::toml_escape($s)}\"" }.join(', ') %>]
+<%-   } -%>
+<%-   if $r['allowed_images'] =~ Array and !$r['allowed_images'].empty { -%>
+    allowed_images = [<%= $r['allowed_images'].map |$i| { "\"${rootless_gitlab_runner::toml_escape($i)}\"" }.join(', ') %>]
+<%-   } -%>
+<%-   if $r['allowed_pull_policies'] =~ Array and !$r['allowed_pull_policies'].empty { -%>
+    allowed_pull_policies = [<%= $r['allowed_pull_policies'].map |$p| { "\"${rootless_gitlab_runner::toml_escape($p)}\"" }.join(', ') %>]
+<%-   } -%>
+    shm_size = <%= $shm %>
+<%-   if $r['helper_image'] =~ String and !$r['helper_image'].empty { -%>
+    helper_image = "<%= rootless_gitlab_runner::toml_escape($r['helper_image']) %>"
+<%-   } -%>
+    network_mtu = <%= $mtu %>
+<% } -%>
