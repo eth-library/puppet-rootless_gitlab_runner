@@ -1,0 +1,15 @@
+---
+extends: default
+
+# Vendored gems and spec fixtures are not ours to lint
+ignore: |
+  **/vendor/
+  **/spec/fixtures/
+
+rules:
+  line-length:
+    max: 120
+  document-start:
+    present: true
+  truthy:
+    check-keys: false
