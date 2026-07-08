@@ -1,0 +1,18 @@
+---
+# Hiera hierarchy for a standalone consumer: the off-repo secret store first
+# (runner tokens, root-owned 0600 — never committed), then per-node data,
+# then shared defaults.
+version: 5
+
+defaults:
+  datadir: data
+  data_hash: yaml_data
+
+hierarchy:
+  - name: 'Off-repo secret store'
+    path: 'secrets.yaml'
+    datadir: '/etc/gitlab-runner-infra'
+  - name: 'Per-node'
+    path: 'nodes/%{facts.networking.hostname}.yaml'
+  - name: 'Common defaults'
+    path: 'common.yaml'
