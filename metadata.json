@@ -1,0 +1,41 @@
+{
+  "name": "ethlibrary-rootless_gitlab_runner",
+  "version": "0.1.0",
+  "author": "ETH Zurich, Jaime Cardozo",
+  "summary": "Installs, configures, and manages a rootless GitLab Runner.",
+  "license": "Apache-2.0",
+  "source": "https://github.com/eth-library/puppet-rootless_gitlab_runner",
+  "project_page": "https://github.com/eth-library/puppet-rootless_gitlab_runner",
+  "issues_url": "https://github.com/eth-library/puppet-rootless_gitlab_runner/issues",
+  "dependencies": [
+    {
+      "name": "puppetlabs/apt",
+      "version_requirement": ">= 11.0.0 < 12.0.0"
+    },
+    {
+      "name": "puppetlabs/stdlib",
+      "version_requirement": ">= 9.0.0 < 11.0.0"
+    }
+  ],
+  "operatingsystem_support": [
+    {
+      "operatingsystem": "Ubuntu",
+      "operatingsystemrelease": [
+        "22.04"
+      ]
+    }
+  ],
+  "requirements": [
+    {
+      "name": "puppet",
+      "version_requirement": ">= 8.0.0 < 9.0.0"
+    }
+  ],
+  "tags": [
+    "gitlab",
+    "gitlab-runner",
+    "docker",
+    "rootless",
+    "ci"
+  ]
+}
