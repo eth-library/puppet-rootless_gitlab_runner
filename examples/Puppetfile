@@ -1,0 +1,14 @@
+# r10k Puppetfile for a standalone (masterless) consumer wrapper repo.
+# Deploy with: r10k puppetfile install --puppetfile Puppetfile --moduledir puppet/modules
+# (the module's self-update loop re-runs this on every tick).
+#
+# Pinning contract: the module is pinned by :commit SHA (immutable), never by
+# branch or movable tag. Update the pin deliberately via merge request.
+#
+# r10k does not resolve metadata.json dependencies — list them explicitly:
+mod 'rootless_gitlab_runner',
+  git: 'https://github.com/eth-library/puppet-rootless_gitlab_runner.git',
+  commit: 'REPLACE-WITH-PINNED-COMMIT-SHA'
+
+mod 'puppetlabs-apt', '11.3.2'
+mod 'puppetlabs-stdlib', '10.0.1'
