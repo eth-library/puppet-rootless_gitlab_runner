@@ -1,0 +1,9 @@
+---
+# Force the runner-token store to Sensitive on automatic parameter lookup, so a
+# plain-YAML or hiera-eyaml secret store is wrapped without the consumer typing
+# anything special. convert_to wraps the whole hash (=> Sensitive[Hash]); the
+# module unwraps it once when rendering and re-wraps the rendered config as
+# Sensitive, so tokens stay out of the catalog, reports, and diffs.
+lookup_options:
+  rootless_gitlab_runner::tokens:
+    convert_to: 'Sensitive'
