@@ -1,0 +1,14 @@
+---
+# Module data layer. Carries the module's own lookup_options — notably the
+# convert_to that wraps the runner-token store in Sensitive on lookup, so a
+# plain-YAML or hiera-eyaml secret store needs no special handling from the
+# consumer. See data/common.yaml.
+version: 5
+
+defaults:
+  datadir: data
+  data_hash: yaml_data
+
+hierarchy:
+  - name: 'Module data'
+    path: 'common.yaml'
