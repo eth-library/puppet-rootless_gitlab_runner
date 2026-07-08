@@ -1,0 +1,26 @@
+# bundler: project-local gems (installed by `just install`) and its config
+/vendor/
+/.bundle/
+
+# direnv cache
+/.direnv/
+
+# yard cache left behind by puppet-strings (`just docs`)
+/.yardoc/
+
+# spec fixture modules fetched by `puppet-fixtures install` (.fixtures.yml),
+# including the self-symlink puppet-fixtures creates for the module under test
+/spec/fixtures/modules/
+
+# scratch dir of `just record-demo` (removed on exit; lingers only after a crash)
+/.record-demo/
+
+# editor project settings and macOS directory metadata
+.idea/
+.DS_Store
+
+# Never commit a real secret store (runner tokens/keys). The single committed
+# exception is the token-store template, exempted by exact path — so no other
+# secrets*.yaml (real store, per-host, per-env) can slip through.
+secrets*.yaml
+!/examples/secrets.example.yaml
