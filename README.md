@@ -2,13 +2,12 @@
 
 [![CI](https://github.com/eth-library/puppet-rootless_gitlab_runner/actions/workflows/ci.yml/badge.svg)](https://github.com/eth-library/puppet-rootless_gitlab_runner/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
-![Status: alpha](https://img.shields.io/badge/status-alpha-orange)
+[![Release](https://img.shields.io/github/v/release/eth-library/puppet-rootless_gitlab_runner)](https://github.com/eth-library/puppet-rootless_gitlab_runner/releases)
 ![Puppet: >= 8 < 9](https://img.shields.io/badge/puppet-%3E%3D%208%20%3C%209-blue)
 ![Ubuntu: 22.04](https://img.shields.io/badge/ubuntu-22.04-blue)
 
 > [!NOTE]
-> This module is under active development and its interface is not yet stable:
-> parameters and behavior may change without notice. It is provided as is, without
+> This module is maintained on a best-effort basis and provided as is, without
 > warranty of any kind; review every change and apply it at your own risk.
 
 `rootless_gitlab_runner` is a Puppet module that installs and manages a **rootless
