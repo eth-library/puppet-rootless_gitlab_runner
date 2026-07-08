@@ -1,0 +1,102 @@
+---
+# Release workflow: reacts to a pushed v* tag by validating the tag against the
+# repository's declared version and drafting a GitHub Release for a maintainer
+# to publish. CI never creates, signs, or publishes the tag or the release — a
+# maintainer pushes the signed tag and clicks Publish.
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+# One release run per tag; never cancel an in-flight release.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+# Least privilege: read-only by default. Only the draft-Release job is granted
+# contents: write, and only it needs the token.
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Guard — tag matches metadata.json + CHANGELOG rolled
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Assert tag, metadata.json version, and CHANGELOG agree
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag_version="${TAG#v}"
+          meta_version="$(jq -r '.version' metadata.json)"
+
+          if [ "$tag_version" != "$meta_version" ]; then
+            echo "::error::tag ${TAG} (version ${tag_version}) does not match metadata.json version ${meta_version}"
+            exit 1
+          fi
+
+          # [Unreleased] must carry no entries — they belong to the tagged
+          # version's own section by release time.
+          unreleased="$(awk '/^## \[Unreleased\]/{f=1; next} /^## \[/{f=0} f' CHANGELOG.md)"
+          if printf '%s\n' "$unreleased" | grep -Eq '^[[:space:]]*(-|\*|###)'; then
+            echo "::error::CHANGELOG [Unreleased] not empty — roll entries into ## [${tag_version}] first"
+            exit 1
+          fi
+
+          # A section for the tagged version must exist to source the notes from.
+          if ! grep -Eq "^## \[${tag_version}\]" CHANGELOG.md; then
+            echo "::error::no ## [${tag_version}] section in CHANGELOG.md to draft release notes from"
+            exit 1
+          fi
+
+          echo "guard ok: ${TAG} == metadata.json ${meta_version}; [Unreleased] empty; [${tag_version}] present"
+
+  gate:
+    name: Gate — full validation (reuses the CI workflow)
+    needs: guard
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
+  release:
+    name: Draft the GitHub Release
+    needs: gate
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+
+      - name: Extract the CHANGELOG section for this version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          awk -v v="$version" '
+            index($0, "## [" v "]") == 1 {f=1; next}
+            f && /^## \[/ {exit}
+            f {print}
+          ' CHANGELOG.md > release-notes.md
+          test -s release-notes.md || { echo "::error::extracted release notes are empty for ${version}"; exit 1; }
+
+      - name: Create the draft Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          gh release create "${TAG}" \
+            --draft --verify-tag \
+            --title "${TAG}" \
+            --notes-file release-notes.md
