@@ -1,0 +1,37 @@
+<%- | String $apply_script,
+      String $repo_path,
+      String $repo_branch,
+      String $apply_timeout,
+      String $puppet_bindir,
+      Optional[String] $on_failure_unit,
+| -%>
+# Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
+# is overwritten on the next apply.
+[Unit]
+Description=Apply the rootless GitLab Runner configuration (standalone self-update)
+After=network-online.target
+Wants=network-online.target
+AssertPathExists=<%= $apply_script %>
+<%- if $on_failure_unit =~ NotUndef { -%>
+OnFailure=<%= $on_failure_unit %>
+<%- } -%>
+
+[Service]
+Type=oneshot
+# A plain root service gets no login environment; git credential/SSH handling
+# needs $HOME.
+Environment=HOME=/root
+# A non-login service has no PATH to the AIO puppet/r10k bindir, so
+# `puppet apply` / `r10k` would exit 127. Prepend it (git lives in /usr/bin).
+Environment="PATH=<%= $puppet_bindir %>:/usr/bin:/bin"
+# A oneshot unit has no default start timeout; without this a hung fetch would
+# wedge silently.
+TimeoutStartSec=<%= $apply_timeout %>
+ExecStartPre=/usr/bin/git -C <%= $repo_path %> fetch --quiet origin <%= $repo_branch %>
+# Only apply commits carrying a valid signature (protected, signed main).
+ExecStartPre=/usr/bin/git -C <%= $repo_path %> verify-commit origin/<%= $repo_branch %>
+ExecStartPre=/usr/bin/git -C <%= $repo_path %> reset --hard --quiet origin/<%= $repo_branch %>
+ExecStart=<%= $apply_script %>
+# puppet apply --detailed-exitcodes returns 2 when changes were applied; that
+# is a successful run, not a failure.
+SuccessExitStatus=2
