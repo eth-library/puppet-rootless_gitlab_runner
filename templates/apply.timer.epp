@@ -1,0 +1,13 @@
+<%- | String $apply_interval | -%>
+# Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
+# is overwritten on the next apply.
+[Unit]
+Description=Periodically apply the rootless GitLab Runner configuration (deploy + drift correction)
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=<%= $apply_interval %>
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
