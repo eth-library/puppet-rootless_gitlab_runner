@@ -1,0 +1,18 @@
+<%- | String $healthcheck_script,
+      Optional[String] $on_failure_unit,
+| -%>
+# Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
+# is overwritten on the next apply.
+[Unit]
+Description=Health check for the rootless GitLab Runner host
+AssertPathExists=<%= $healthcheck_script %>
+<%- if $on_failure_unit =~ NotUndef { -%>
+OnFailure=<%= $on_failure_unit %>
+<%- } -%>
+
+[Service]
+Type=oneshot
+# git ls-remote over SSH needs $HOME for the key lookup.
+Environment=HOME=/root
+TimeoutStartSec=5min
+ExecStart=<%= $healthcheck_script %>
