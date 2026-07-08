@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Pre-commit gate: the full `just check`.
+# Skip once with:
+#   git commit --no-verify
+# Activated by the flake shellHook via `git config core.hooksPath .githooks`;
+# without Nix, activate it manually (see CONTRIBUTING.md).
+set -euo pipefail
+
+if command -v just >/dev/null 2>&1; then
+    exec just check
+fi
+
+# Committing from outside the dev shell: run the gate inside it.
+if command -v nix >/dev/null 2>&1; then
+    exec nix develop --command just check
+fi
+
+echo "pre-commit: 'just' is not on PATH and nix is unavailable." >&2
+echo "Enter the dev shell (CONTRIBUTING.md) or skip once with 'git commit --no-verify'." >&2
+exit 1
