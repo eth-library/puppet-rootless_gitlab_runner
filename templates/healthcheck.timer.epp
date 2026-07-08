@@ -1,0 +1,13 @@
+<%- | String $healthcheck_interval | -%>
+# Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
+# is overwritten on the next apply.
+[Unit]
+Description=Periodic health check for the rootless GitLab Runner host
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=<%= $healthcheck_interval %>
+RandomizedDelaySec=60
+
+[Install]
+WantedBy=timers.target
