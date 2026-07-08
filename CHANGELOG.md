@@ -7,6 +7,8 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-07-09
+
 The initial release: a rootless GitLab Runner host — runner config, the rootless-Docker
 pieces it depends on, packages, and secrets — managed as reviewable Puppet code, applied
 standalone or from a Puppet fleet. Targets Ubuntu 22.04 with Puppet 8/OpenVox 8.
@@ -87,4 +89,5 @@ standalone or from a Puppet fleet. Targets Ubuntu 22.04 with Puppet 8/OpenVox 8.
   newline or malformed value in host data is escaped or rejected up front instead of
   producing a broken or injected runner configuration.
 
-[Unreleased]: https://github.com/eth-library/puppet-rootless_gitlab_runner/commits/main
+[Unreleased]: https://github.com/eth-library/puppet-rootless_gitlab_runner/compare/v1.0.0...main
+[1.0.0]: https://github.com/eth-library/puppet-rootless_gitlab_runner/releases/tag/v1.0.0
