@@ -1,0 +1,37 @@
+---
+# Example host data for a standalone host: every ownership toggle is on except the standalone
+# self-update loop, which stays opt-in because it needs the Self-update prerequisites provisioned
+# first (see the README). The other toggles bring the host up from zero and keep it converged.
+# Copy to nodes/<hostname>.yaml and adjust. No tokens here; runner tokens live in the
+# off-repository secret store (/etc/gitlab-runner-infra/secrets.yaml, root 0600) and are merged in
+# at apply time via each runner's token_key.
+rootless_gitlab_runner::runner_uid: 2000
+rootless_gitlab_runner::manage_apt_repos: true
+rootless_gitlab_runner::packages:
+  - 'uidmap'
+  - 'dbus-user-session'
+  - 'docker-ce'
+  - 'docker-ce-cli'
+  - 'docker-ce-rootless-extras'
+  - 'containerd.io'
+  - 'gitlab-runner'
+rootless_gitlab_runner::manage_runner_user: true
+rootless_gitlab_runner::manage_rootless_docker: true
+rootless_gitlab_runner::manage_runner_service: true
+# Opt-in: needs the Self-update prerequisites (see the README) provisioned first; never enable
+# on a fleet host.
+rootless_gitlab_runner::manage_standalone_self_update: false
+# Checkout of this wrapper repo on the host (the self-update loop's target).
+rootless_gitlab_runner::repo_path: '/opt/runner-infra'
+rootless_gitlab_runner::runners:
+  - name: 'docker-rootless'
+    # Reference into the secret store's tokens hash — not the token itself.
+    token_key: 'runner_a'
+    # This runner does NOT bind-mount the Docker socket into jobs: the safe
+    # default. Mounting it (socket_mount: true) hands every job control of the
+    # daemon as the runner user, and access to the runner token (see the README
+    # "Security" section). If a runner genuinely needs the socket, constrain it
+    # with an image allowlist, for example:
+    #   socket_mount: true
+    #   allowed_images: ['registry.example.org/ci/*']
+    #   allowed_pull_policies: ['always']
