@@ -463,8 +463,11 @@ release — while CI does the mechanical validation and drafting in between:
 5. **A maintainer publishes the draft** in the GitHub UI after a review — the publish click is
    the final confirmation.
 
-Between releases, `metadata.json` `version` carries the next patch with an `-rc0` suffix (for
-example `1.0.1-rc0` once `1.0.0` has shipped), marking `main` as unreleased development.
+Between releases, `metadata.json` `version` carries the next patch with an `-rc` suffix (for
+example `1.0.1-rc` once `1.0.0` has shipped). Under trunk-based development `main` is always
+releasable: the next version can be cut from any commit, so `main` is a standing release
+candidate, which the `-rc` marks. It is a single static marker, not a numbered series of
+release candidates.
 
 **Forge publishing is not part of a release yet.** The first releases ship git-only (r10k
 pins a commit or tag). Publishing to the Puppet Forge may be evaluated for a later version,
