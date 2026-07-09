@@ -18,11 +18,11 @@ The initial release: a rootless GitLab Runner host — runner config, the rootle
 - Declare values shared by every runner once (`url`, `image`, `executor`, …) and override per runner where needed.
 - Support the Docker executor options runners actually use — images, volumes, environment, per-runner caching, and image/pull-policy allowlists.
 - A config change needs no service restart — GitLab Runner re-reads `config.toml` within seconds on its own.
-- Remove a runner as a data change: drop its entry from Hiera and the next apply renders it out (delete the record on the GitLab side separately).
+- Remove a runner as a data change: drop its entry from Hiera and the next apply renders it out.
 
 #### Rootless Docker
-- Make the rootless-Docker `no-detach-netns` fix permanent, so package upgrades on Ubuntu 22.04 stop silently breaking rootless container networking.
-- Optionally build the runner user's rootless Docker daemon from scratch (with a preflight check on prerequisites), or, left off, treat an existing daemon as a prerequisite.
+- Make the rootless-Docker `no-detach-netns` fix permanent, so package upgrades on Ubuntu 22.04 stop breaking rootless container networking.
+- Optionally build the runner user's rootless Docker daemon from scratch, with a preflight check on prerequisites; or, left off, treat an existing daemon as a prerequisite.
 
 #### Secrets
 - Fetch runner tokens by name from an off-repository store on the host, so neither the control repository nor the rendered configuration contains a secret.
