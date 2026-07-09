@@ -25,8 +25,8 @@ The initial release: a rootless GitLab Runner host — runner config, the rootle
 - Optionally build the runner user's rootless Docker daemon from scratch (with a preflight check on prerequisites), or, left off, treat an existing daemon as a prerequisite.
 
 #### Secrets
-- Keep runner tokens out of git: they live in an off-repository store on the host and are referenced by name, so neither the control repository nor the rendered configuration ever contains a secret.
-- Deploy pre-created GitLab runner tokens — the module never talks to the GitLab API, so an apply never depends on GitLab being reachable, and a host only ever holds its own runner token.
+- Fetch runner tokens by name from an off-repository store on the host, so neither the control repository nor the rendered configuration contains a secret.
+- The module consumes pre-created runner tokens and never calls the GitLab API, so an apply never depends on GitLab being reachable.
 - Fail loudly on an unrecognized runner setting, or a token that can't be resolved when a secret store is present. Without a store, tokens render blank so the configuration still compiles.
 
 #### Flexible host ownership
