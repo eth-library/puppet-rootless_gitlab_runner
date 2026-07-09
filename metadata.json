@@ -1,6 +1,6 @@
 {
   "name": "ethlibrary-rootless_gitlab_runner",
-  "version": "1.0.0",
+  "version": "1.0.1-rc",
   "author": "ETH Zurich, Jaime Cardozo",
   "summary": "Installs, configures, and manages a rootless GitLab Runner.",
   "license": "Apache-2.0",
