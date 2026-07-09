@@ -17,7 +17,7 @@ The initial release: a rootless GitLab Runner host — runner config, the rootle
 - Manage the entire GitLab Runner `config.toml` from Hiera data — global settings and any number of runners on a single host, all from one node file.
 - Declare values shared by every runner once (`url`, `image`, `executor`, …) and override per runner where needed.
 - Support the Docker executor options runners actually use — images, volumes, environment, per-runner caching, and image/pull-policy allowlists.
-- Changes converge continuously: once a data change is applied, the runner adopts the new configuration on its own within seconds — no service restarts to arrange.
+- A config change needs no service restart — GitLab Runner re-reads `config.toml` within seconds on its own.
 - Remove a runner as a data change: drop its entry from Hiera and the next apply renders it out (delete the record on the GitLab side separately).
 
 #### Rootless Docker
