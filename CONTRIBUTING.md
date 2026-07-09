@@ -19,6 +19,7 @@ merged and deployed. Consuming and operating the module on a host is covered by 
 - [Change workflow](#change-workflow)
 - [Branching strategy](#branching-strategy)
 - [Commit rules](#commit-rules)
+- [Changelog](#changelog)
 - [CI/CD](#cicd)
 - [Releases](#releases)
 - [References](#references)
@@ -359,6 +360,41 @@ Repository-wide rules; they apply to every commit on every branch.
   break and its migration. A breaking change is a **major** bump under the Puppet rule in
   [Releases](#releases): a renamed or removed parameter or Hiera key, a changed
   host-affecting default, or a dropped supported Puppet, Ruby, or operating-system version.
+
+## Changelog
+
+`CHANGELOG.md` is consumer-facing: it follows Keep a Changelog [\[20\]](#ref-20), and its
+per-version section is what the release workflow publishes verbatim as the GitHub Release
+notes. Add an entry under `## [Unreleased]` in the same pull request as the change it
+describes; at release time that section is rolled into the new version (see
+[Releases](#releases)).
+
+**What earns an entry — consumer-visible changes only:**
+- a new parameter, toggle, or Hiera key, or a change to an existing one;
+- a change in a default, or in what the module manages;
+- a fix in rendered configuration or applied host state;
+- a new or dropped dependency, or a change in supported OS / Puppet range;
+- a security-relevant change.
+
+Put it under the right Keep a Changelog category — Added, Changed, Deprecated, Removed,
+Fixed, Security. Internal-only work earns no entry: refactors, tests, CI, and dev tooling.
+Documentation changes usually don't either — the CHANGELOG tracks the module's behaviour and
+interface, not its prose — but a substantial new piece of user-facing documentation (a guide,
+a migration note) can warrant an **Added** entry.
+
+**Style — write for an operator reading the release notes:**
+- State what changed and, where it helps an operator, a concrete benefit or why it matters.
+  One entry per user-visible change, a line or two at most.
+- Lead with the change itself, not a meta-phrase like "Now supports…".
+- Then stop. Cut vague or promotional justification, long rationale, how-to, and examples;
+  those belong in the README.
+- Don't overclaim: describe what the module actually does, not an outcome it can't
+  guarantee. e.g. write "fetch tokens by name from an
+  off-repository store", not "keep tokens out of git".
+- Leave out implementation detail, such as file modes, exit codes, internal environment
+  variables, or private class names.
+- Write each entry as a single unwrapped line. It becomes the GitHub Release notes, where
+  wrapped lines break mid-sentence.
 
 ## CI/CD
 
