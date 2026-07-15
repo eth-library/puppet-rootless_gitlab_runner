@@ -60,7 +60,11 @@ jobs:
             # Empty file: the closures are identical (no effective change).
             : > diff.txt
           else
-            nix store diff-closures ./result-base ./result-head > diff.txt
+            # Strip ANSI colour codes: diff-closures colours the size delta
+            # even when stdout is not a TTY, and the escape codes would
+            # render as raw control codes inside the Markdown comment.
+            nix store diff-closures ./result-base ./result-head \
+              | sed -E 's/\x1b\[[0-9;]*m//g' > diff.txt
           fi
 
       - name: Upsert the PR comment
