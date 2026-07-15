@@ -3,8 +3,8 @@
 # Renders the runner config (config.toml) from a Hiera-driven list of runners,
 # manages the rootless-docker "no-detach-netns" systemd user drop-in and the
 # secret-store directory, installs the apt packages listed in `packages`, and
-# optionally: owns the runner user (with the subordinate ID ranges rootless
-# needs), brings up the rootless docker user daemon behind a fail-loud
+# optionally: owns the runner user, brings up the rootless docker user daemon
+# (with the subordinate ID ranges it needs) behind a fail-loud
 # preflight, manages the runner service together with its privilege-drop
 # drop-in, and installs the standalone self-update units. Designed to run
 # standalone via `puppet apply` with an isolated confdir/vardir so it never
@@ -127,18 +127,22 @@
 # @param gitlab_runner_repo_key_source
 #   URL of GitLab Runner's armored signing key (stored as an apt keyring).
 # @param manage_runner_user
-#   Whether to manage the runner group, user, home, and the subordinate
-#   UID/GID ranges rootless docker needs. Keep off where another
-#   configuration-management system owns the user. Default false.
+#   Whether to manage the runner group, user, and home. Keep off where another
+#   configuration-management system owns the user. The subordinate UID/GID
+#   ranges rootless docker needs are owned by `manage_rootless_docker`.
+#   Default false.
 # @param subid_start
-#   First subordinate UID/GID allocated to the runner user.
+#   First subordinate UID/GID allocated to the runner user (written by
+#   `manage_rootless_docker`).
 # @param subid_count
 #   Number of subordinate UIDs/GIDs allocated (rootless needs >= 65536).
 # @param manage_rootless_docker
-#   Whether to bring up the rootless docker user daemon: enable lingering and
-#   run `dockerd-rootless-setuptool.sh install` (guarded, as the runner user),
-#   behind a fail-loud preflight that asserts the prerequisites instead of
-#   half-installing. Also stops and masks the rootful system
+#   Whether to bring up the rootless docker user daemon: provision the
+#   subordinate UID/GID ranges (`subid_start`/`subid_count`; an existing entry
+#   is never overwritten, and the runner user may be owned elsewhere), enable
+#   lingering and run `dockerd-rootless-setuptool.sh install` (guarded, as the
+#   runner user), behind a fail-loud preflight that asserts the prerequisites
+#   instead of half-installing. Also stops and masks the rootful system
 #   `docker.service`/`docker.socket`, which a fresh `docker-ce` install starts
 #   as root, so the only Docker daemon on the host is the unprivileged one.
 #   cgroup-v2 controller delegation is deliberately not managed
@@ -333,9 +337,9 @@ class rootless_gitlab_runner (
   contain rootless_gitlab_runner::service
   contain rootless_gitlab_runner::self_update
 
-  # One-shot fresh apply must converge in order: packages first, then the user
-  # and its subids, then daemon bring-up (its preflight asserts what the
-  # earlier classes establish), then config + drop-ins, then the service.
+  # One-shot fresh apply must converge in order: packages first, then the
+  # user, then daemon bring-up (subids, then the preflight that asserts what
+  # the earlier steps establish), then config + drop-ins, then the service.
   # Classes whose toggle is off are empty and drop out of the chain.
   Class['rootless_gitlab_runner::apt_repos']
   -> Class['rootless_gitlab_runner::packages']

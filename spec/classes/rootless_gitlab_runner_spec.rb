@@ -38,6 +38,12 @@ describe 'rootless_gitlab_runner' do
   context 'with defaults' do
     it { is_expected.to compile.with_all_deps }
 
+    %w[subuid subgid].each do |f|
+      it "writes no #{f} entry with rootless docker unmanaged" do
+        is_expected.not_to contain_exec("rootless_gitlab_runner #{f} entry")
+      end
+    end
+
     it 'chains the classes so a one-shot fresh apply converges in order' do
       is_expected.to contain_class('rootless_gitlab_runner::apt_repos').that_comes_before('Class[rootless_gitlab_runner::packages]')
       is_expected.to contain_class('rootless_gitlab_runner::packages').that_comes_before('Class[rootless_gitlab_runner::user]')
@@ -262,11 +268,8 @@ describe 'rootless_gitlab_runner' do
     end
 
     %w[subuid subgid].each do |f|
-      it "appends the #{f} range, guarded by an existing entry" do
-        is_expected.to contain_exec("rootless_gitlab_runner #{f} entry").with(
-          'command' => "echo 'gitlab-runner:231072:65536' >> /etc/#{f}",
-          'unless'  => "grep -q '^gitlab-runner:' /etc/#{f}",
-        )
+      it "writes no #{f} entry (subids belong to manage_rootless_docker)" do
+        is_expected.not_to contain_exec("rootless_gitlab_runner #{f} entry")
       end
     end
   end
@@ -281,6 +284,24 @@ describe 'rootless_gitlab_runner' do
         'command' => 'loginctl enable-linger gitlab-runner',
         'unless'  => 'test -e /var/lib/systemd/linger/gitlab-runner',
       )
+    end
+
+    # manage_runner_user stays off here, so this is the externally-owned-user
+    # shape: the module provisions subids without owning the account.
+    { 'subuid' => '--add-subuids', 'subgid' => '--add-subgids' }.each do |f, flag|
+      it "provisions the #{f} range for the (possibly external) runner user, guarded by an existing entry" do
+        is_expected.to contain_exec("rootless_gitlab_runner #{f} entry").with(
+          'command' => "usermod #{flag} 231072-296607 gitlab-runner",
+          'unless'  => "grep -q '^gitlab-runner:' /etc/#{f}",
+        )
+      end
+    end
+
+    it 'orders subid provisioning before the preflight that asserts it' do
+      %w[subuid subgid].each do |f|
+        is_expected.to contain_exec("rootless_gitlab_runner #{f} entry")
+          .that_comes_before('Exec[rootless_gitlab_runner preflight]')
+      end
     end
 
     it 'fails loud in the preflight: success in unless, exit 1 in command' do
@@ -353,6 +374,22 @@ describe 'rootless_gitlab_runner' do
           'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/4242/bus',
         ],
       ).that_subscribes_to('File[/home/gitlab-runner/.config/systemd/user/docker.service.d/no-detach-netns.conf]')
+    end
+  end
+
+  context 'with manage_rootless_docker and manage_runner_user and a custom subid range' do
+    let(:params) do
+      { 'manage_rootless_docker' => true, 'manage_runner_user' => true,
+        'runner_uid' => 4242, 'subid_start' => 300_000, 'subid_count' => 131_072 }
+    end
+
+    it { is_expected.to compile.with_all_deps }
+
+    it 'renders the inclusive usermod range from subid_start/subid_count' do
+      is_expected.to contain_exec('rootless_gitlab_runner subuid entry')
+        .with_command('usermod --add-subuids 300000-431071 gitlab-runner')
+      is_expected.to contain_exec('rootless_gitlab_runner subgid entry')
+        .with_command('usermod --add-subgids 300000-431071 gitlab-runner')
     end
   end
 
