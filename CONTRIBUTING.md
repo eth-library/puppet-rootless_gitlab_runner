@@ -306,7 +306,9 @@ it.
 ## Change workflow
 
 Most changes flow through an issue (optional for a small, self-contained change) and a pull
-request against `main`. An issue captures *what and why*; a pull request delivers *how*, verified.
+request against `main`; changes that only touch documentation may go straight to `main` (see
+[Branching strategy](#branching-strategy)). An issue captures *what and why*; a pull request
+delivers *how*, verified.
 
 ### Issues
 
@@ -350,9 +352,11 @@ available for anything that fits neither.
 
 ## Branching strategy
 
-Development is trunk-based [\[21\]](#ref-21): `main` is always releasable, and every change lands on it
-through a short-lived topic branch and a pull request — never a direct push (`main` is
-protected; see [CI/CD](#cicd)).
+Development is trunk-based [\[21\]](#ref-21): `main` is always releasable. Changes that touch module
+code, templates, or configuration land through a short-lived topic branch and a pull request with a
+green validation gate (see [CI/CD](#cicd)) — `main` is protected, with an admin bypass reserved for
+the exception below. Changes that only touch documentation may be committed directly to `main`,
+provided `just check` passes locally first.
 
 - **Topic branches are short-lived** and named for the change with a Conventional-Commit
   type prefix — `feat/allowed-images`, `fix/apply-script-quoting`,
