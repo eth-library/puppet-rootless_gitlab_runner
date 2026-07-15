@@ -1,7 +1,7 @@
 # @summary A strict POSIX-portable Linux username.
 #
-# The runner user is interpolated raw into shell execs (the subuid/subgid echo
-# in `user.pp`, the rootless preflight `awk` in `rootless_docker.pp`) and into
+# The runner user is interpolated raw into shell execs (the subuid/subgid
+# `usermod` execs and the preflight `awk` in `rootless_docker.pp`) and into
 # systemd directives. Constraining it to the shadow-utils `NAME_REGEX` shape —
 # a lowercase or underscore start, then lowercase letters, digits, underscore or
 # hyphen, up to 32 characters — excludes shell-hostile characters (quotes,

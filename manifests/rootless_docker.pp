@@ -40,6 +40,27 @@ class rootless_gitlab_runner::rootless_docker {
       path    => ['/usr/bin', '/bin'],
     }
 
+    # Rootless docker needs >= 65536 subordinate IDs per user, and `useradd
+    # --system` allocates none, so the ranges are provisioned here with the
+    # rest of the rootless runtime: also when the runner user itself is owned
+    # externally (manage_runner_user off). usermod (--add-subuids /
+    # --add-subgids, shadow 4.8.1) takes an inclusive range and writes the
+    # entry under the shadow file lock; it fails loud when the user does not
+    # exist yet. Guarded per file: an existing entry for the user is left
+    # alone (no drift war over externally chosen ranges).
+    $subid_first = $rootless_gitlab_runner::subid_start
+    $subid_last  = $subid_first + $rootless_gitlab_runner::subid_count - 1
+    $subid_flags = { 'subuid' => '--add-subuids', 'subgid' => '--add-subgids' }
+    $subid_flags.each |$f, $flag| {
+      exec { "rootless_gitlab_runner ${f} entry":
+        command  => "usermod ${flag} ${subid_first}-${subid_last} ${runner_user}",
+        unless   => "grep -q '^${runner_user}:' /etc/${f}",
+        path     => ['/usr/sbin', '/usr/bin', '/bin'],
+        provider => 'shell',
+        before   => Exec['rootless_gitlab_runner preflight'],
+      }
+    }
+
     # Fail-loud preflight, silent when healthy: the success condition lives in
     # `unless` (prereqs OK => exec skipped, no change, clean --noop); a missing
     # prereq runs `command`, which prints the contract and exits 1 before any

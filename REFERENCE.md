@@ -18,7 +18,7 @@
 * `rootless_gitlab_runner::rootless_docker`: Brings up the rootless docker user daemon behind a fail-loud preflight.
 * `rootless_gitlab_runner::self_update`: Installs the standalone self-update units and the healthcheck.
 * `rootless_gitlab_runner::service`: Manages the runner system service and its privilege-drop drop-in.
-* `rootless_gitlab_runner::user`: Owns the runner group, user, home and subordinate ID ranges.
+* `rootless_gitlab_runner::user`: Owns the runner group, user and home.
 
 ### Functions
 
@@ -35,8 +35,8 @@
 Renders the runner config (config.toml) from a Hiera-driven list of runners,
 manages the rootless-docker "no-detach-netns" systemd user drop-in and the
 secret-store directory, installs the apt packages listed in `packages`, and
-optionally: owns the runner user (with the subordinate ID ranges rootless
-needs), brings up the rootless docker user daemon behind a fail-loud
+optionally: owns the runner user, brings up the rootless docker user daemon
+(with the subordinate ID ranges it needs) behind a fail-loud
 preflight, manages the runner service together with its privilege-drop
 drop-in, and installs the standalone self-update units. Designed to run
 standalone via `puppet apply` with an isolated confdir/vardir so it never
@@ -371,9 +371,10 @@ Default value: `'https://packages.gitlab.com/runner/gitlab-runner/gpgkey'`
 
 Data type: `Boolean`
 
-Whether to manage the runner group, user, home, and the subordinate
-UID/GID ranges rootless docker needs. Keep off where another
-configuration-management system owns the user. Default false.
+Whether to manage the runner group, user, and home. Keep off where another
+configuration-management system owns the user. The subordinate UID/GID
+ranges rootless docker needs are owned by `manage_rootless_docker`.
+Default false.
 
 Default value: `false`
 
@@ -381,7 +382,8 @@ Default value: `false`
 
 Data type: `Integer[1]`
 
-First subordinate UID/GID allocated to the runner user.
+First subordinate UID/GID allocated to the runner user (written by
+`manage_rootless_docker`).
 
 Default value: `231072`
 
@@ -397,10 +399,12 @@ Default value: `65536`
 
 Data type: `Boolean`
 
-Whether to bring up the rootless docker user daemon: enable lingering and
-run `dockerd-rootless-setuptool.sh install` (guarded, as the runner user),
-behind a fail-loud preflight that asserts the prerequisites instead of
-half-installing. Also stops and masks the rootful system
+Whether to bring up the rootless docker user daemon: provision the
+subordinate UID/GID ranges (`subid_start`/`subid_count`; an existing entry
+is never overwritten, and the runner user may be owned elsewhere), enable
+lingering and run `dockerd-rootless-setuptool.sh install` (guarded, as the
+runner user), behind a fail-loud preflight that asserts the prerequisites
+instead of half-installing. Also stops and masks the rootful system
 `docker.service`/`docker.socket`, which a fresh `docker-ce` install starts
 as root, so the only Docker daemon on the host is the unprivileged one.
 cgroup-v2 controller delegation is deliberately not managed
@@ -645,8 +649,8 @@ the raw string to escape
 
 ### <a name="Rootless_gitlab_runner--Username"></a>`Rootless_gitlab_runner::Username`
 
-The runner user is interpolated raw into shell execs (the subuid/subgid echo
-in `user.pp`, the rootless preflight `awk` in `rootless_docker.pp`) and into
+The runner user is interpolated raw into shell execs (the subuid/subgid
+`usermod` execs and the preflight `awk` in `rootless_docker.pp`) and into
 systemd directives. Constraining it to the shadow-utils `NAME_REGEX` shape —
 a lowercase or underscore start, then lowercase letters, digits, underscore or
 hyphen, up to 32 characters — excludes shell-hostile characters (quotes,
