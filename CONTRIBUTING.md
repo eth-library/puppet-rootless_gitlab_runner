@@ -17,6 +17,8 @@ merged and deployed. Consuming and operating the module on a host is covered by 
   - [Walkthrough: adding a configuration option](#walkthrough-adding-a-configuration-option)
 - [Testing](#testing)
 - [Change workflow](#change-workflow)
+  - [Issues](#issues)
+  - [Pull requests](#pull-requests)
 - [Branching strategy](#branching-strategy)
 - [Commit rules](#commit-rules)
 - [Changelog](#changelog)
@@ -303,6 +305,36 @@ it.
 
 ## Change workflow
 
+Most changes flow through an issue (optional for a small, self-contained change) and a pull
+request against `main`. An issue captures *what and why*; a pull request delivers *how*, verified.
+
+### Issues
+
+Issues are categorised by outcome, which also sets the eventual version bump (see
+[Commit rules](#commit-rules)):
+
+- **Bug** (`fix`) — rendered configuration or applied host state is wrong, or behaviour does not
+  match the documentation.
+- **Improvement** (`feat`) — a new parameter, toggle, or managed resource, or better behaviour on
+  existing surface.
+- **Refactor / internal** (`refactor` / `chore`) — no behaviour change: code health, tooling, CI,
+  dependencies.
+- **Docs** (`docs`) — documentation only.
+
+**Security** and **breaking** changes are flags on any category — a `Security` label and a
+Keep-a-Changelog `Security` entry, or the `!` / `BREAKING CHANGE:` major rule — not separate
+categories.
+
+An issue records what needs to change and why, and — when known — the acceptance criteria that
+define done, filled in as far as the design is understood (a problem-first issue may add criteria
+after investigation). An issue is resolved by one or more pull requests; a large change may span
+several. Open one from the chooser — **Bug report** or **Change proposal**; a blank issue stays
+available for anything that fits neither.
+
+### Pull requests
+
+- A pull request may stand alone (a small, self-contained change) or resolve an issue — link it
+  with `Closes #X`, or `Part of #X` when it is one of several.
 - Keep every change well scoped: one concern per pull request, one logical change per
   commit. A pull request that fixes a bug should not also refactor unrelated code.
 - Code and tests move together: a change and the tests covering it belong in the same
@@ -312,7 +344,7 @@ it.
 - Record consumer-facing changes in `CHANGELOG.md` under `## [Unreleased]`, in the same
   pull request (new parameters, changed behavior, fixes, dependency or platform changes).
   Internal-only changes (refactors, tests, CI) need no entry.
-- Open a **pull request** against `main`; merging requires a green validation
+- Open the pull request against `main`; merging requires a green validation
   workflow (see [CI/CD](#cicd)).
 - Every commit follows the [commit rules](#commit-rules) below.
 
