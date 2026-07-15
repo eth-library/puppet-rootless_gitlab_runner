@@ -475,8 +475,9 @@ the tag.
 
 Versions follow Semantic Versioning [\[19\]](#ref-19), read for a configuration module: a
 [**breaking change**](#breaking-changes) — one that can break a consumer's existing data or platform — is a
-**major** bump. That covers renaming or removing a parameter or Hiera key, changing a
-host-affecting default, and dropping a supported Puppet, Ruby, or operating-system version.
+**major** bump. That includes, not exhaustively: renaming or removing a parameter or Hiera key,
+changing a host-affecting default, dropping a supported Puppet, Ruby, or operating-system version,
+and regressing the applied state of an existing supported configuration.
 A new parameter, toggle, or managed resource is a **minor** bump; a correction to rendered
 configuration or applied state is a **patch** bump.
 
