@@ -227,8 +227,8 @@ Each remaining concern is a Hiera toggle, opt-in by default:
 |---|---|---|
 | apt packages | [`rootless_gitlab_runner::packages`](#packages) | `[]` |
 | apt repositories serving those packages | [`rootless_gitlab_runner::manage_apt_repos`](#manage_apt_repos) | `false` |
-| Runner user, home, subordinate IDs | [`rootless_gitlab_runner::manage_runner_user`](#manage_runner_user) | `false` |
-| Rootless-Docker daemon bring-up | [`rootless_gitlab_runner::manage_rootless_docker`](#manage_rootless_docker) | `false` |
+| Runner user, home | [`rootless_gitlab_runner::manage_runner_user`](#manage_runner_user) | `false` |
+| Rootless-Docker daemon bring-up, subordinate IDs | [`rootless_gitlab_runner::manage_rootless_docker`](#manage_rootless_docker) | `false` |
 | Runner service + its systemd drop-in | [`rootless_gitlab_runner::manage_runner_service`](#manage_runner_service) | `false` |
 | Standalone self-update loop + healthcheck | [`rootless_gitlab_runner::manage_standalone_self_update`](#manage_standalone_self_update) | `false` |
 
@@ -257,17 +257,22 @@ does not resolve module metadata dependencies; the example skeleton carries the 
 
 #### `manage_runner_user`
 
-Owns the runner group, user, home, and the subordinate UID/GID ranges
-rootless Docker needs (`subid_start`/`subid_count`, default `231072`/`65536`). Keep it off
+Owns the runner group, user, and home. Keep it off
 where another configuration-management system owns the user; two owners would fight over it.
+The subordinate UID/GID ranges rootless Docker needs are owned by
+[`manage_rootless_docker`](#manage_rootless_docker), not this toggle.
 Home internals (`.ssh`, `.config`) are never managed, beyond the no-detach-netns drop-in the
 module places under `~/.config/systemd/user/`.
 
 #### `manage_rootless_docker`
 
-Brings up the rootless-Docker user daemon: enables lingering and runs
+Brings up the rootless-Docker user daemon: provisions the subordinate UID/GID ranges the
+daemon needs (`subid_start`/`subid_count`, default `231072`/`65536`; an existing entry is
+never overwritten), enables lingering and runs
 `dockerd-rootless-setuptool.sh install` [\[4\]](#ref-4) as the runner user (guarded on installed state, so it
-runs only until the rootless daemon's user unit exists). The setuptool is upstream's
+runs only until the rootless daemon's user unit exists). The ranges are provisioned for the
+runner user whether the module owns the account ([`manage_runner_user`](#manage_runner_user))
+or another system does. The setuptool is upstream's
 supported installer and ships in `docker-ce-rootless-extras`, version-locked to the daemon
 it configures — the module invokes it rather than re-rendering its output, so the generated
 user unit (`~/.config/systemd/user/docker.service`) can never drift out of step with the

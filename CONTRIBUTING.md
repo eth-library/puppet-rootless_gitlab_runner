@@ -213,8 +213,8 @@ the public class is the only entry point.
 │   ├── init.pp                   #   public class: parameters, ordering, containment
 │   ├── apt_repos.pp              #   apt repositories behind manage_apt_repos
 │   ├── packages.pp               #   apt packages from the `packages` list
-│   ├── user.pp                   #   runner user, home, subordinate IDs
-│   ├── rootless_docker.pp        #   rootless-docker bring-up behind the preflight
+│   ├── user.pp                   #   runner group, user, home
+│   ├── rootless_docker.pp        #   subids + rootless-docker bring-up behind the preflight
 │   ├── config.pp                 #   renders config.toml; secret-store directory
 │   ├── service.pp                #   runner service + privilege-drop drop-in
 │   └── self_update.pp            #   self-update loop + healthcheck units
