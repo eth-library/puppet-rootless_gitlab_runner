@@ -21,6 +21,7 @@ merged and deployed. Consuming and operating the module on a host is covered by 
   - [Pull requests](#pull-requests)
 - [Branching strategy](#branching-strategy)
 - [Commit rules](#commit-rules)
+  - [Breaking changes](#breaking-changes)
 - [Changelog](#changelog)
 - [CI/CD](#cicd)
 - [Releases](#releases)
@@ -324,7 +325,7 @@ Issues are categorised by outcome, which also sets the eventual version bump (se
 - **Docs** (`docs`) — documentation only.
 
 **Security** and **breaking** changes are flags on any category — a `Security` label and a
-Keep-a-Changelog `Security` entry, or the `!` / `BREAKING CHANGE:` major rule — not separate
+Keep-a-Changelog `Security` entry, or the `!` / `BREAKING CHANGE:` [major rule](#breaking-changes) — not separate
 categories.
 
 An issue records what needs to change and why, and — when known — the acceptance criteria that
@@ -391,11 +392,13 @@ Repository-wide rules; they apply to every commit on every branch.
   Scopes track the private classes and templates (`config`, `service`, `self_update`,
   `apt_repos`, `user`, `rootless_docker`), e.g. `feat(config): render allowed_images`,
   `fix(self_update): quote repo_path in apply script`.
-- **Breaking changes are marked explicitly.** Append `!` after the type/scope
-  (`feat(init)!: rename the runners key`) or add a `BREAKING CHANGE:` footer that names the
-  break and its migration. A breaking change is a **major** bump under the Puppet rule in
-  [Releases](#releases): a renamed or removed parameter or Hiera key, a changed
-  host-affecting default, or a dropped supported Puppet, Ruby, or operating-system version.
+### Breaking changes
+
+Breaking changes are marked explicitly: append `!` after the type/scope
+(`feat(init)!: rename the runners key`) or add a `BREAKING CHANGE:` footer that names the break and
+its migration. A breaking change is a **major** bump under the Puppet rule in
+[Releases](#releases): a renamed or removed parameter or Hiera key, a changed host-affecting
+default, or a dropped supported Puppet, Ruby, or operating-system version.
 
 ## Changelog
 
@@ -472,7 +475,7 @@ the tag.
 ## Releases
 
 Versions follow Semantic Versioning [\[19\]](#ref-19), read for a configuration module: a
-**breaking change** — one that can break a consumer's existing data or platform — is a
+[**breaking change**](#breaking-changes) — one that can break a consumer's existing data or platform — is a
 **major** bump. That covers renaming or removing a parameter or Hiera key, changing a
 host-affecting default, and dropping a supported Puppet, Ruby, or operating-system version.
 A new parameter, toggle, or managed resource is a **minor** bump; a correction to rendered
