@@ -1,0 +1,97 @@
+---
+# Environment diff workflow: when a PR changes flake.lock, build the pinned
+# environment (the Nix shell CI and contributors enter) at the PR head and at
+# the merge base, diff the two realized closures, and upsert the package-level
+# delta as a single PR comment. No secrets; builds are mostly binary-cache
+# downloads.
+name: Nix flake environment package diff
+
+on:
+  pull_request:
+    paths:
+      - flake.lock
+      - .github/workflows/environment-diff.yml
+
+# Cancel a superseded run when a new push lands on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Dependabot-triggered runs get a read-only GITHUB_TOKEN by default; the
+# explicit permissions key is respected and restores comment access.
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  environment-diff:
+    name: Environment closure diff
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+          # The pull_request checkout is the PR merge commit; full history so
+          # the base side's flake.lock can be read from its first parent.
+          fetch-depth: 0
+
+      - name: Install Nix
+        # flakes + nix-command are enabled by default in install-nix-action v31,
+        # so no extra_nix_config is needed.
+        uses: cachix/install-nix-action@630ae543ea3a38a9a4166f03376c02c50f408342  # v31.11.0
+
+      - name: Build both environments and diff their closures
+        run: |
+          set -euo pipefail
+          # The runner is x86_64-linux; hardcode the system rather than
+          # evaluating builtins.currentSystem impurely.
+          attr='devShells.x86_64-linux.default'
+          # HEAD is the PR merge commit, so HEAD^1 is the exact base tip this PR
+          # merges onto. Building the checkout against the base lock
+          # (--reference-lock-file) pairs head flake.nix with base pins:
+          # identical to the true base on the lock-only bumps this workflow
+          # targets.
+          git show 'HEAD^1:flake.lock' > /tmp/base.lock
+          nix build ".#${attr}" --out-link result-head
+          nix build ".#${attr}" --reference-lock-file /tmp/base.lock \
+            --no-write-lock-file --out-link result-base
+          if [ "$(readlink result-base)" = "$(readlink result-head)" ]; then
+            # Empty file: the closures are identical (no effective change).
+            : > diff.txt
+          else
+            nix store diff-closures ./result-base ./result-head > diff.txt
+          fi
+
+      - name: Upsert the PR comment
+        # --edit-last targets the last comment of the workflow token's own
+        # identity (github-actions[bot]); this is the only workflow that comments
+        # as that bot, so the marker line is informational, not the match key.
+        # The unchanged case edits an existing comment but never creates one:
+        # no --create-if-none, and the edit's failure when none exists is the
+        # intended silence.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          if [ -s diff.txt ]; then
+            {
+              echo '<!-- environment-diff -->'
+              echo '### Environment diff (`flake.lock` update)'
+              echo
+              echo '```text'
+              cat diff.txt
+              echo '```'
+            } > comment.md
+            gh pr comment "$PR_NUMBER" --edit-last --create-if-none \
+              --body-file comment.md
+          else
+            {
+              echo '<!-- environment-diff -->'
+              echo '### Environment diff (`flake.lock` update)'
+              echo
+              echo 'No effective change to the environment closure.'
+            } > comment.md
+            gh pr comment "$PR_NUMBER" --edit-last --body-file comment.md || true
+          fi
