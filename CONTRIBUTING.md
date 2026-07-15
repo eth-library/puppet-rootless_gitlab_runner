@@ -465,6 +465,14 @@ auto-deploy described in the README's
 [Applying the configuration](README.md#applying-the-configuration), safe: a red check
 is the last cheap place to catch a bad change before a host converges to it.
 
+A per-pull-request workflow, `.github/workflows/environment-diff.yml`, lets a reviewer
+see what a `flake.lock` bump actually does before approving it. Such a bump, most often
+one of Dependabot's weekly ones, arrives as a single opaque hash change that can stand for
+hundreds of upstream package updates, with nothing in the PR showing which tools of the
+pinned environment move. The workflow builds the environment before and after the bump and
+posts the package and version differences as one plain-language PR comment. It updates that
+same comment on later pushes and says nothing when the environment is effectively unchanged.
+
 A separate workflow, `.github/workflows/release.yml`, runs at release time rather than on
 every change: a pushed `v*` tag triggers it to guard the tag against `metadata.json` and the
 CHANGELOG, reuse the validation workflow above as its gate, and draft a GitHub Release for
