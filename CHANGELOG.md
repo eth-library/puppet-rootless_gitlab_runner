@@ -7,6 +7,10 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Changed
+
+- Subordinate UID/GID ranges are now provisioned by `manage_rootless_docker`, together with the other rootless-Docker prerequisites, instead of by `manage_runner_user`: rootless Docker can now be brought up on a host whose runner user is owned by another system. An existing range entry is never overwritten, and `manage_runner_user` keeps owning the group, user, and home.
+
 ## [1.0.0] - 2026-07-09
 
 The initial release: a rootless GitLab Runner host — runner config, the rootless-Docker pieces it depends on, packages, and secrets — managed as reviewable Puppet code, applied standalone or from a Puppet fleet. Targets Ubuntu 22.04 with Puppet 8/OpenVox 8.
