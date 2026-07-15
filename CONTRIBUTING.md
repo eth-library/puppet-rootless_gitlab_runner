@@ -396,9 +396,8 @@ Repository-wide rules; they apply to every commit on every branch.
 
 Breaking changes are marked explicitly: append `!` after the type/scope
 (`feat(init)!: rename the runners key`) or add a `BREAKING CHANGE:` footer that names the break and
-its migration. A breaking change is a **major** bump under the Puppet rule in
-[Releases](#releases): a renamed or removed parameter or Hiera key, a changed host-affecting
-default, or a dropped supported Puppet, Ruby, or operating-system version.
+its migration. A breaking change is a **major** bump; what counts as breaking is defined in
+[Releases](#releases).
 
 ## Changelog
 
