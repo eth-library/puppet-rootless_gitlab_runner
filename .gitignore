@@ -24,3 +24,7 @@
 # secrets*.yaml (real store, per-host, per-env) can slip through.
 secrets*.yaml
 !/examples/secrets.example.yaml
+
+# local env files (may carry tokens/credentials)
+.env
+.env.*
