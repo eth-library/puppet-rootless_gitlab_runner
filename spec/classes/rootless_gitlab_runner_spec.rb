@@ -136,15 +136,35 @@ describe 'rootless_gitlab_runner' do
       )
     end
 
+    # The command and guard strings are pinned end to end (anchored): dropping
+    # the install step, the guard's staged fetch, or the exit-code
+    # normalization must fail here, not survive behind a fragment match.
     it 'refreshes each keyring content-guarded: staged download, compare, replace + index refresh only on change' do
       is_expected.to contain_exec('rootless_gitlab_runner docker keyring refresh')
-        .with_command(%r{apt-helper download-file 'https://download\.docker\.com/linux/ubuntu/gpg' '/var/cache/rootless_gitlab_runner/docker\.asc'})
-        .with_unless(%r{cmp -s '/var/cache/rootless_gitlab_runner/docker\.asc' '/etc/apt/keyrings/docker\.asc'})
+        .with_command(%r{\A/usr/lib/apt/apt-helper download-file 'https://download\.docker\.com/linux/ubuntu/gpg' '/var/cache/rootless_gitlab_runner/docker\.asc' && install -m 0644 '/var/cache/rootless_gitlab_runner/docker\.asc' '/etc/apt/keyrings/docker\.asc'\z})
+        .with_unless(%r{\A\{ test -x /usr/lib/apt/apt-helper && /usr/lib/apt/apt-helper download-file 'https://download\.docker\.com/linux/ubuntu/gpg' '/var/cache/rootless_gitlab_runner/docker\.asc' && cmp -s '/var/cache/rootless_gitlab_runner/docker\.asc' '/etc/apt/keyrings/docker\.asc' ; \} >/dev/null 2>&1 \|\| exit 1\z})
         .that_notifies('Exec[apt_update]')
       is_expected.to contain_exec('rootless_gitlab_runner gitlab-runner keyring refresh')
-        .with_command(%r{apt-helper download-file 'https://packages\.gitlab\.com/runner/gitlab-runner/gpgkey' '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc'})
-        .with_unless(%r{cmp -s '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' '/etc/apt/keyrings/gitlab-runner\.asc'})
+        .with_command(%r{\A/usr/lib/apt/apt-helper download-file 'https://packages\.gitlab\.com/runner/gitlab-runner/gpgkey' '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' && install -m 0644 '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' '/etc/apt/keyrings/gitlab-runner\.asc'\z})
+        .with_unless(%r{\A\{ test -x /usr/lib/apt/apt-helper && /usr/lib/apt/apt-helper download-file 'https://packages\.gitlab\.com/runner/gitlab-runner/gpgkey' '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' && cmp -s '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' '/etc/apt/keyrings/gitlab-runner\.asc' ; \} >/dev/null 2>&1 \|\| exit 1\z})
         .that_notifies('Exec[apt_update]')
+    end
+
+    # First-apply ordering must be declared, not incidental: the staging dir
+    # and keyring file precede the refresh; the refresh precedes the source it
+    # signs (a source applied before its key breaks apt-get update on a fresh
+    # host).
+    it 'orders the refresh after its files and before its apt source' do
+      is_expected.to contain_exec('rootless_gitlab_runner docker keyring refresh')
+        .that_requires('File[/var/cache/rootless_gitlab_runner]')
+        .that_requires('File[/etc/apt/keyrings/docker.asc]')
+      is_expected.to contain_apt__source('docker')
+        .that_requires('Exec[rootless_gitlab_runner docker keyring refresh]')
+      is_expected.to contain_exec('rootless_gitlab_runner gitlab-runner keyring refresh')
+        .that_requires('File[/var/cache/rootless_gitlab_runner]')
+        .that_requires('File[/etc/apt/keyrings/gitlab-runner.asc]')
+      is_expected.to contain_apt__source('gitlab-runner')
+        .that_requires('Exec[rootless_gitlab_runner gitlab-runner keyring refresh]')
     end
 
     # Honest limit: a compiled catalog cannot show whether the applied state
@@ -180,11 +200,11 @@ describe 'rootless_gitlab_runner' do
         is_expected.to contain_apt__source('docker').with_location('https://mirror.example.org/docker/ubuntu')
         is_expected.to contain_apt__source('gitlab-runner').with_location('https://mirror.example.org/runner/ubuntu')
         is_expected.to contain_exec('rootless_gitlab_runner docker keyring refresh')
-          .with_command(%r{download-file 'https://mirror\.example\.org/docker/gpg'})
-          .with_unless(%r{download-file 'https://mirror\.example\.org/docker/gpg'})
+          .with_command(%r{download-file 'https://mirror\.example\.org/docker/gpg' '/var/cache/rootless_gitlab_runner/docker\.asc' && install -m 0644})
+          .with_unless(%r{download-file 'https://mirror\.example\.org/docker/gpg' '/var/cache/rootless_gitlab_runner/docker\.asc' && cmp -s '/var/cache/rootless_gitlab_runner/docker\.asc' '/etc/apt/keyrings/docker\.asc'})
         is_expected.to contain_exec('rootless_gitlab_runner gitlab-runner keyring refresh')
-          .with_command(%r{download-file 'https://mirror\.example\.org/runner/gpgkey'})
-          .with_unless(%r{download-file 'https://mirror\.example\.org/runner/gpgkey'})
+          .with_command(%r{download-file 'https://mirror\.example\.org/runner/gpgkey' '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' && install -m 0644})
+          .with_unless(%r{download-file 'https://mirror\.example\.org/runner/gpgkey' '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' && cmp -s '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' '/etc/apt/keyrings/gitlab-runner\.asc'})
       end
     end
   end
