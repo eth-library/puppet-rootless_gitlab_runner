@@ -46,7 +46,12 @@
 # Stated limits: the check validates key names, not values (types are the
 # compiler's job), and it cannot see data layers outside the repository (for
 # example an off-repository secret store; hierarchy levels whose datadir
-# resolves outside the checked data directory are skipped).
+# resolves outside the checked data directory are skipped). Hierarchy levels
+# addressed by `glob`/`globs` or `mapped_paths` are not modeled: advisory
+# resolution covers `path`/`paths` levels only. The `manage` resolution is
+# subkey-level, i.e. deep-merge semantics (what the module's `lookup_options`
+# establish for its struct parameters); a higher-priority layer replacing the
+# whole value with a non-hash under first-found semantics is not modeled.
 #
 # Exit codes: 0 = every key resolves (advisories may still be printed);
 # 1 = at least one unresolvable key, all listed; 2 = usage or tool error.
