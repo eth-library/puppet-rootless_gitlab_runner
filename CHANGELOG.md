@@ -13,6 +13,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Freshly provisioned hosts now get a 165536-wide subordinate-ID range, which satisfies the ID-mapping requirement of nested rootless BuildKit builds.
 - Subordinate UID/GID ranges are now provisioned by `manage_rootless_docker`, together with the other rootless-Docker prerequisites, instead of by `manage_runner_user`: rootless Docker can now be brought up on a host whose runner user is owned by another system. An existing range entry is never overwritten, and `manage_runner_user` keeps owning the group, user, and home.
 
 ### Fixed

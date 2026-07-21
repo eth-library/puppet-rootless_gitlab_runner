@@ -391,9 +391,12 @@ Default value: `231072`
 
 Data type: `Integer[65536]`
 
-Number of subordinate UIDs/GIDs allocated (rootless needs >= 65536).
+Number of subordinate UIDs/GIDs allocated (rootless docker needs at
+least 65536). The 165536 default fits nested rootless BuildKit builds:
+the rootless BuildKit image maps IDs 100000-165535 inside the build
+container.
 
-Default value: `65536`
+Default value: `165536`
 
 ##### <a name="-rootless_gitlab_runner--manage_rootless_docker"></a>`manage_rootless_docker`
 

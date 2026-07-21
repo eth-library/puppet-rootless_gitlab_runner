@@ -135,7 +135,10 @@
 #   First subordinate UID/GID allocated to the runner user (written by
 #   `manage_rootless_docker`).
 # @param subid_count
-#   Number of subordinate UIDs/GIDs allocated (rootless needs >= 65536).
+#   Number of subordinate UIDs/GIDs allocated (rootless docker needs at
+#   least 65536). The 165536 default fits nested rootless BuildKit builds:
+#   the rootless BuildKit image maps IDs 100000-165535 inside the build
+#   container.
 # @param manage_rootless_docker
 #   Whether to bring up the rootless docker user daemon: provision the
 #   subordinate UID/GID ranges (`subid_start`/`subid_count`; an existing entry
@@ -248,7 +251,7 @@ class rootless_gitlab_runner (
   Stdlib::HTTPUrl          $gitlab_runner_repo_key_source = 'https://packages.gitlab.com/runner/gitlab-runner/gpgkey',
   Boolean                  $manage_runner_user     = false,
   Integer[1]               $subid_start            = 231072,
-  Integer[65536]           $subid_count            = 65536,
+  Integer[65536]           $subid_count            = 165536,
   Boolean                  $manage_rootless_docker = false,
   Stdlib::Absolutepath     $setuptool_path         = '/usr/bin/dockerd-rootless-setuptool.sh',
   Boolean                  $manage_runner_service  = false,
