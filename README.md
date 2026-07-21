@@ -163,7 +163,8 @@ surfaces as a raw Puppet or host error rather than the module's clear preflight 
 22.04 these are the current, verified requirements:
 
 - **Subordinate IDs:** `/etc/subuid` and `/etc/subgid` [\[12\]](#ref-12) must each grant the runner
-  user at least **65,536** IDs (for example `gitlab-runner:231072:65536`). A plain
+  user at least **65,536** IDs (165,536 for nested rootless BuildKit builds), for example
+  `gitlab-runner:231072:165536`, the module's default range. A plain
   `useradd --system` does not reliably allocate these.
 - **`uidmap` package:** Provides `newuidmap` and `newgidmap` [\[13\]](#ref-13), required for
   user-namespace mapping. It is not always pulled in automatically.
@@ -268,7 +269,7 @@ module places under `~/.config/systemd/user/`.
 #### `manage_rootless_docker`
 
 Brings up the rootless-Docker user daemon: provisions the subordinate UID/GID ranges the
-daemon needs (`subid_start`/`subid_count`, default `231072`/`65536`; an existing entry is
+daemon needs (`subid_start`/`subid_count`, default `231072`/`165536`; an existing entry is
 never overwritten), enables lingering and runs
 `dockerd-rootless-setuptool.sh install` [\[4\]](#ref-4) as the runner user (guarded on installed state, so it
 runs only until the rootless daemon's user unit exists). The ranges are provisioned for the

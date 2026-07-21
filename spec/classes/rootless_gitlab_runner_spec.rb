@@ -361,7 +361,7 @@ describe 'rootless_gitlab_runner' do
     { 'subuid' => '--add-subuids', 'subgid' => '--add-subgids' }.each do |f, flag|
       it "provisions the #{f} range for the (possibly external) runner user, guarded by an existing entry" do
         is_expected.to contain_exec("rootless_gitlab_runner #{f} entry").with(
-          'command' => "usermod #{flag} 231072-296607 gitlab-runner",
+          'command' => "usermod #{flag} 231072-396607 gitlab-runner",
           'unless'  => "grep -q '^gitlab-runner:' /etc/#{f}",
         )
       end
