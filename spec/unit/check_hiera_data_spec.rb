@@ -19,8 +19,10 @@ describe 'scripts/check_hiera_data.rb' do
 
   # Modulepath holding only this module (a symlink in a tmpdir), so the
   # surface generation does not also document the fetched fixture modules.
+  # Removed on exit; without the hook, every suite run leaks a tmpdir.
   REAL_MODULE_PATH = Dir.mktmpdir('data_check_modules').tap do |dir|
     File.symlink(File.expand_path('../..', __dir__), File.join(dir, 'rootless_gitlab_runner'))
+    at_exit { FileUtils.remove_entry(dir, true) }
   end
 
   def run_check(fixture_dir, modulepath, data_dir: File.join(fixture_dir, 'data'))
