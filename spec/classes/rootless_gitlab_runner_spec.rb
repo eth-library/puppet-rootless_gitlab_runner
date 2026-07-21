@@ -136,15 +136,34 @@ describe 'rootless_gitlab_runner' do
       )
     end
 
-    it 'fetches each keyring content-compared (sha256), not by mtime, so an unchanged key is a no-op' do
-      is_expected.to contain_file('/etc/apt/keyrings/docker.asc').with(
-        'source'   => 'https://download.docker.com/linux/ubuntu/gpg',
-        'checksum' => 'sha256',
-      )
-      is_expected.to contain_file('/etc/apt/keyrings/gitlab-runner.asc').with(
-        'source'   => 'https://packages.gitlab.com/runner/gitlab-runner/gpgkey',
-        'checksum' => 'sha256',
-      )
+    it 'refreshes each keyring content-guarded: staged download, compare, replace + index refresh only on change' do
+      is_expected.to contain_exec('rootless_gitlab_runner docker keyring refresh')
+        .with_command(%r{apt-helper download-file 'https://download\.docker\.com/linux/ubuntu/gpg' '/var/cache/rootless_gitlab_runner/docker\.asc'})
+        .with_unless(%r{cmp -s '/var/cache/rootless_gitlab_runner/docker\.asc' '/etc/apt/keyrings/docker\.asc'})
+        .that_notifies('Exec[apt_update]')
+      is_expected.to contain_exec('rootless_gitlab_runner gitlab-runner keyring refresh')
+        .with_command(%r{apt-helper download-file 'https://packages\.gitlab\.com/runner/gitlab-runner/gpgkey' '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc'})
+        .with_unless(%r{cmp -s '/var/cache/rootless_gitlab_runner/gitlab-runner\.asc' '/etc/apt/keyrings/gitlab-runner\.asc'})
+        .that_notifies('Exec[apt_update]')
+    end
+
+    # Honest limit: a compiled catalog cannot show whether the applied state
+    # churns. The previous implementation passed a catalog test asserting
+    # `checksum => sha256` while every real apply rewrote the keyring, because
+    # Puppet ignores `checksum` for http(s) File sources at runtime. What this
+    # test can pin is the resource shape that caused the churn: the keyring
+    # File must carry no http source. Runtime idempotency (second apply
+    # against an unchanged key reports zero changes) is asserted on the
+    # greenfield host.
+    it 'manages keyring presence and permissions without an http source (the mtime-churning fetch path)' do
+      is_expected.to contain_file('/etc/apt/keyrings/docker.asc')
+        .with('ensure' => 'file', 'mode' => '0644')
+        .without_source
+        .without_checksum
+      is_expected.to contain_file('/etc/apt/keyrings/gitlab-runner.asc')
+        .with('ensure' => 'file', 'mode' => '0644')
+        .without_source
+        .without_checksum
     end
 
     context 'with custom repo locations and key sources' do
@@ -157,11 +176,15 @@ describe 'rootless_gitlab_runner' do
         )
       end
 
-      it 'threads the overrides into the sources and keyrings' do
+      it 'threads the overrides into the sources and keyring refreshes' do
         is_expected.to contain_apt__source('docker').with_location('https://mirror.example.org/docker/ubuntu')
         is_expected.to contain_apt__source('gitlab-runner').with_location('https://mirror.example.org/runner/ubuntu')
-        is_expected.to contain_file('/etc/apt/keyrings/docker.asc').with_source('https://mirror.example.org/docker/gpg')
-        is_expected.to contain_file('/etc/apt/keyrings/gitlab-runner.asc').with_source('https://mirror.example.org/runner/gpgkey')
+        is_expected.to contain_exec('rootless_gitlab_runner docker keyring refresh')
+          .with_command(%r{download-file 'https://mirror\.example\.org/docker/gpg'})
+          .with_unless(%r{download-file 'https://mirror\.example\.org/docker/gpg'})
+        is_expected.to contain_exec('rootless_gitlab_runner gitlab-runner keyring refresh')
+          .with_command(%r{download-file 'https://mirror\.example\.org/runner/gpgkey'})
+          .with_unless(%r{download-file 'https://mirror\.example\.org/runner/gpgkey'})
       end
     end
   end
@@ -399,12 +422,16 @@ describe 'rootless_gitlab_runner' do
   # (`command -v`, `which`, `type`) on a missing binary, unlike bash's 1.
   # Guards must test host state (`test`, `grep`) and exit 0/1 only.
   context 'exec guard hygiene (all toggles on)' do
+    # Facts pinned so manage_apt_repos (puppetlabs-apt needs Debian-family
+    # facts) can join the sweep and its keyring-refresh guards are covered.
+    let(:facts) { UBUNTU_FACTS }
     let(:params) do
       {
         'manage_runner_user'            => true,
         'manage_rootless_docker'        => true,
         'manage_runner_service'         => true,
         'manage_standalone_self_update' => true,
+        'manage_apt_repos'              => true,
         'runner_uid'                    => 4242,
       }
     end
