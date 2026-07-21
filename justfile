@@ -101,11 +101,15 @@ install:
 # run all checks: validate, lint, test, docs
 check: validate lint test _docs-check
 
-# syntax-check every Puppet manifest and EPP template without applying anything
+# syntax-check every Puppet manifest and EPP template without applying anything.
+# ./.claude/ holds agent worktrees (full checkouts): sweeping them in redefines
+# every type and template, so the validate walk must skip the directory.
 validate:
     find . -name '*.pp' -not -path './vendor/*' -not -path './spec/fixtures/*' \
+        -not -path './.claude/*' \
         -print0 | xargs -0 -r bundle exec puppet parser validate
     find . -name '*.epp' -not -path './vendor/*' -not -path './spec/fixtures/*' \
+        -not -path './.claude/*' \
         -print0 | xargs -0 -r bundle exec puppet epp validate
 
 # lint everything (the default), or one target: `just lint < puppet | metadata | yaml | nix >`

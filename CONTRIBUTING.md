@@ -194,7 +194,9 @@ automatically (the flake shellHook sets
 `git config core.hooksPath .githooks`); on the without-Nix path, run that `git config`
 command once yourself. Committing from outside the dev shell still works: the hook
 falls back to `nix develop --command just check`. Skip it for a single commit with
-`git commit --no-verify` — CI runs the same checks regardless.
+`git commit --no-verify` — CI runs the same checks regardless. The hook unsets the
+`GIT_*` environment git exports to hooks, so its nested git operations (the spec-fixture
+clones) stay safe in a fresh git worktree.
 
 ## How the module is put together
 
