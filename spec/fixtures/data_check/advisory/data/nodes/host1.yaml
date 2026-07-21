@@ -1,0 +1,6 @@
+---
+# Subkeys set on a node while the effective manage stays false (from the
+# common layer): the advisory names them.
+demo::standalone:
+  self_update:
+    interval: '5min'

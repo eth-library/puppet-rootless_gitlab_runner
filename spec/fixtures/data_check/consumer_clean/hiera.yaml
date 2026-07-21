@@ -1,0 +1,17 @@
+---
+# Fixture hierarchy mirroring a consumer control repository, including an
+# in-repository encrypted-secrets level (eyaml key names are plaintext YAML).
+version: 5
+
+defaults:
+  datadir: data
+  data_hash: yaml_data
+
+hierarchy:
+  - name: 'Encrypted secrets (per-node)'
+    lookup_key: eyaml_lookup_key
+    path: 'secrets/%{facts.networking.hostname}.eyaml'
+  - name: 'Per-node'
+    path: 'nodes/%{facts.networking.hostname}.yaml'
+  - name: 'Common defaults'
+    path: 'common.yaml'

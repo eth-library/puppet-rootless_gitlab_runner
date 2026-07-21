@@ -1,0 +1,3 @@
+---
+rootless_gitlab_runner::runner_uid: 1111
+rootless_gitlab_runner::manage_rootless_docker: true
