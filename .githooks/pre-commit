@@ -6,6 +6,12 @@
 # without Nix, activate it manually (see CONTRIBUTING.md).
 set -euo pipefail
 
+# git exports GIT_DIR/GIT_INDEX_FILE/GIT_WORK_TREE/GIT_PREFIX into hook
+# environments. The gate below clones spec fixtures with a nested git, which
+# must resolve its own repository by normal discovery — inherited variables
+# point it at this repository's index and, in a git worktree, corrupt it.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
+
 if command -v just >/dev/null 2>&1; then
     exec just check
 fi
