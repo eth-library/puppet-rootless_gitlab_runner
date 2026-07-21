@@ -229,14 +229,33 @@ describe 'rootless_gitlab_runner' do
   context 'examples/data with examples/secrets.example.yaml resolves tokens' do
     let(:facts) { UBUNTU_FACTS }
     let(:params) do
-      tokens = example_yaml('secrets.example.yaml')['rootless_gitlab_runner::tokens']
-      example_data_params.merge('tokens' => sensitive(tokens))
+      tokens = example_yaml('secrets.example.yaml')['rootless_gitlab_runner::runner_tokens']
+      example_data_params.merge('runner_tokens' => sensitive(tokens))
     end
 
     it { is_expected.to compile.with_all_deps }
 
     it 'renders the referenced runner token into the config' do
       expect(rendered_config).to match(%r{glrt-REPLACE-WITH-RUNNER-TOKEN})
+    end
+  end
+
+  # The lookup leg of the Sensitive contract: a plain-YAML (unwrapped) secret
+  # store resolved through Hiera is wrapped by the module's convert_to lookup
+  # rule — without the rule on exactly this key, the typed parameter rejects
+  # the bare hash and compilation fails.
+  context 'with a plain-YAML token store resolved through Hiera' do
+    let(:hiera_config) { File.expand_path(File.join(__dir__, '..', 'fixtures', 'hiera', 'plain_token_store.yaml')) }
+
+    it { is_expected.to compile.with_all_deps }
+
+    it 'wraps the plain store Sensitive on lookup and renders the referenced token' do
+      expect(rendered_config).to match(%r{glrt-PLAIN-STORE-TOKEN})
+    end
+
+    it 'keeps the rendered configuration content Sensitive with a populated store' do
+      expect(catalogue.resource('File', '/etc/gitlab-runner/config.toml').sensitive_parameters)
+        .to include(:content)
     end
   end
 
@@ -300,9 +319,9 @@ describe 'rootless_gitlab_runner' do
 
     context 'with a secret store present and an unresolvable token_key' do
       let(:params) do
-        { 'tokens'  => sensitive({ 'runner_a' => 'glrt-x' }),
-          'runners' => [{ 'name' => 'r', 'url' => 'https://x/', 'executor' => 'docker',
-                          'image' => 'i', 'token_key' => 'runner_b' }] }
+        { 'runner_tokens' => sensitive({ 'runner_a' => 'glrt-x' }),
+          'runners'       => [{ 'name' => 'r', 'url' => 'https://x/', 'executor' => 'docker',
+                                'image' => 'i', 'token_key' => 'runner_b' }] }
       end
 
       it { is_expected.to compile.and_raise_error(%r{token_key 'runner_b' of runner 'r' not found}) }
@@ -310,9 +329,9 @@ describe 'rootless_gitlab_runner' do
 
     context 'with a secret store present and a runner missing its token_key' do
       let(:params) do
-        { 'tokens'  => sensitive({ 'runner_a' => 'glrt-x' }),
-          'runners' => [{ 'name' => 'r', 'url' => 'https://x/', 'executor' => 'docker',
-                          'image' => 'i' }] }
+        { 'runner_tokens' => sensitive({ 'runner_a' => 'glrt-x' }),
+          'runners'       => [{ 'name' => 'r', 'url' => 'https://x/', 'executor' => 'docker',
+                                'image' => 'i' }] }
       end
 
       it { is_expected.to compile.and_raise_error(%r{runner 'r' has no token_key but the secret store is populated}) }
@@ -695,16 +714,16 @@ describe 'rootless_gitlab_runner' do
   context 'golden file: full two-runner config' do
     let(:params) do
       {
-        'runner_uid' => 4242,
-        'tokens'     => sensitive({ 'runner_a' => 'glrt-GOLDEN-TOKEN-A',
-                                    'runner_b' => 'glrt-GOLDEN-TOKEN-B' }),
+        'runner_uid'    => 4242,
+        'runner_tokens' => sensitive({ 'runner_a' => 'glrt-GOLDEN-TOKEN-A',
+                                       'runner_b' => 'glrt-GOLDEN-TOKEN-B' }),
         # url + executor deliberately live in runner_defaults: the golden file
         # must render byte-identical, proving the merge changes nothing.
         'runner_defaults' => { 'url' => 'https://gitlab.example.org/', 'executor' => 'docker' },
         # Every documented runner key set to a non-default value across the two
         # runners, so a mutation to any exercised template line (e.g. hard-wiring
         # privileged to false) breaks the byte-exact render.
-        'runners'    => [
+        'runners'       => [
           {
             'name'                         => 'socket-runner',
             'id'                           => 42,

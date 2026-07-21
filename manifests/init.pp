@@ -10,9 +10,9 @@
 # standalone via `puppet apply` with an isolated confdir/vardir so it never
 # collides with a central Puppet agent.
 #
-# Runner tokens are never stored in this module or in version control. They are
-# looked up at apply time from an off-repo secret store via the `tokens`
-# parameter, keyed by each runner's `token_key`.
+# Runner tokens are never stored in this module or in version control. They
+# are looked up at apply time from an off-repository secret store via the
+# `runner_tokens` parameter, keyed by each runner's `token_key`.
 #
 # The `manage_*` parameters are persistent ownership switches, not one-shot
 # bootstrap flags: set once per host and left on, so every apply keeps owning
@@ -57,21 +57,23 @@
 #   `cache` (Hash — its presence renders the `[runners.cache]` tables; optional
 #   key `MaxUploadedArchiveSize` (Integer, default 0)),
 #   `allowed_images` (Array[String]), `allowed_pull_policies` (Array[String]).
-#   Tokens are merged in from `tokens[token_key]` and must not appear here.
+#   Tokens are merged in from `runner_tokens[token_key]` and must not appear
+#   here.
 # @param runner_defaults
 #   Hash merged under every `runners` entry (`$runner_defaults + $runner`,
 #   keys set on the entry win), so multi-runner data does not repeat `url`,
 #   `image`, `executor` and friends. Recognised keys as in `runners`.
-# @param tokens
-#   `Sensitive` map of `token_key` => runner token, supplied by the off-repo
-#   secret store. Typed `Sensitive` so the value is redacted in the catalog and
-#   reports; the module ships `lookup_options` (`convert_to: Sensitive`) so a
-#   plain-YAML or hiera-eyaml secret store is wrapped automatically on lookup —
-#   consumers write ordinary Hiera data. Empty by default so a checkout without
-#   secrets renders blank tokens. When non-empty, every runner must carry a
-#   `token_key` that resolves here or the apply fails (typo/missed-provisioning
-#   guard). The rendered config content is `Sensitive` too, so tokens never
-#   reach the compiled catalog, reports, or `--show_diff` output.
+# @param runner_tokens
+#   `Sensitive` map of `token_key` => runner token, supplied by the
+#   off-repository secret store. Typed `Sensitive` so the value is redacted in
+#   the catalog and reports; the module ships `lookup_options`
+#   (`convert_to: Sensitive`) so a plain-YAML or hiera-eyaml secret store is
+#   wrapped automatically on lookup — consumers write ordinary Hiera data.
+#   Empty by default so a checkout without secrets renders blank tokens. When
+#   non-empty, every runner must carry a `token_key` that resolves here or the
+#   apply fails (typo/missed-provisioning guard). The rendered configuration
+#   content is `Sensitive` too, so tokens never reach the compiled catalog,
+#   reports, or `--show_diff` output.
 # @param runner_user
 #   System user the runner manager and rootless docker run as.
 # @param runner_uid
@@ -230,7 +232,7 @@ class rootless_gitlab_runner (
   Integer[0]               $shutdown_timeout       = 0,
   Array[Hash]              $runners                = [],
   Hash                     $runner_defaults        = {},
-  Sensitive[Hash[String, String]] $tokens          = Sensitive({}),
+  Sensitive[Hash[String, String]] $runner_tokens   = Sensitive({}),
   Rootless_gitlab_runner::Username $runner_user    = 'gitlab-runner',
   Optional[Integer[1]]     $runner_uid             = undef,
   Stdlib::Absolutepath     $runner_home            = '/home/gitlab-runner',

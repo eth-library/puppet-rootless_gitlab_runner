@@ -5,5 +5,5 @@
 # module unwraps it once when rendering and re-wraps the rendered config as
 # Sensitive, so tokens stay out of the catalog, reports, and diffs.
 lookup_options:
-  rootless_gitlab_runner::tokens:
+  rootless_gitlab_runner::runner_tokens:
     convert_to: 'Sensitive'

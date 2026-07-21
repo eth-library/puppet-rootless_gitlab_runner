@@ -1,0 +1,14 @@
+---
+# Hiera config for the plain-store contract test: a single consumer layer
+# whose token store is deliberately unwrapped, so compilation succeeds only
+# through the module's convert_to Sensitive lookup rule. datadir is relative
+# to this file's directory.
+version: 5
+
+defaults:
+  data_hash: yaml_data
+
+hierarchy:
+  - name: 'Consumer data'
+    path: 'common.yaml'
+    datadir: 'plain_token_store'

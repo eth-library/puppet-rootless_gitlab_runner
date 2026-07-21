@@ -42,9 +42,9 @@ drop-in, and installs the standalone self-update units. Designed to run
 standalone via `puppet apply` with an isolated confdir/vardir so it never
 collides with a central Puppet agent.
 
-Runner tokens are never stored in this module or in version control. They are
-looked up at apply time from an off-repo secret store via the `tokens`
-parameter, keyed by each runner's `token_key`.
+Runner tokens are never stored in this module or in version control. They
+are looked up at apply time from an off-repository secret store via the
+`runner_tokens` parameter, keyed by each runner's `token_key`.
 
 The `manage_*` parameters are persistent ownership switches, not one-shot
 bootstrap flags: set once per host and left on, so every apply keeps owning
@@ -85,7 +85,7 @@ The following parameters are available in the `rootless_gitlab_runner` class:
 * [`shutdown_timeout`](#-rootless_gitlab_runner--shutdown_timeout)
 * [`runners`](#-rootless_gitlab_runner--runners)
 * [`runner_defaults`](#-rootless_gitlab_runner--runner_defaults)
-* [`tokens`](#-rootless_gitlab_runner--tokens)
+* [`runner_tokens`](#-rootless_gitlab_runner--runner_tokens)
 * [`runner_user`](#-rootless_gitlab_runner--runner_user)
 * [`runner_uid`](#-rootless_gitlab_runner--runner_uid)
 * [`runner_home`](#-rootless_gitlab_runner--runner_home)
@@ -175,7 +175,8 @@ Ordered list of runner definitions. Each entry is a hash; recognised keys:
 `cache` (Hash — its presence renders the `[runners.cache]` tables; optional
 key `MaxUploadedArchiveSize` (Integer, default 0)),
 `allowed_images` (Array[String]), `allowed_pull_policies` (Array[String]).
-Tokens are merged in from `tokens[token_key]` and must not appear here.
+Tokens are merged in from `runner_tokens[token_key]` and must not appear
+here.
 
 Default value: `[]`
 
@@ -189,19 +190,20 @@ keys set on the entry win), so multi-runner data does not repeat `url`,
 
 Default value: `{}`
 
-##### <a name="-rootless_gitlab_runner--tokens"></a>`tokens`
+##### <a name="-rootless_gitlab_runner--runner_tokens"></a>`runner_tokens`
 
 Data type: `Sensitive[Hash[String, String]]`
 
-`Sensitive` map of `token_key` => runner token, supplied by the off-repo
-secret store. Typed `Sensitive` so the value is redacted in the catalog and
-reports; the module ships `lookup_options` (`convert_to: Sensitive`) so a
-plain-YAML or hiera-eyaml secret store is wrapped automatically on lookup —
-consumers write ordinary Hiera data. Empty by default so a checkout without
-secrets renders blank tokens. When non-empty, every runner must carry a
-`token_key` that resolves here or the apply fails (typo/missed-provisioning
-guard). The rendered config content is `Sensitive` too, so tokens never
-reach the compiled catalog, reports, or `--show_diff` output.
+`Sensitive` map of `token_key` => runner token, supplied by the
+off-repository secret store. Typed `Sensitive` so the value is redacted in
+the catalog and reports; the module ships `lookup_options`
+(`convert_to: Sensitive`) so a plain-YAML or hiera-eyaml secret store is
+wrapped automatically on lookup — consumers write ordinary Hiera data.
+Empty by default so a checkout without secrets renders blank tokens. When
+non-empty, every runner must carry a `token_key` that resolves here or the
+apply fails (typo/missed-provisioning guard). The rendered configuration
+content is `Sensitive` too, so tokens never reach the compiled catalog,
+reports, or `--show_diff` output.
 
 Default value: `Sensitive({})`
 

@@ -2,7 +2,7 @@
 # The consumer shape with every key resolving; lookup_options is Hiera's
 # reserved key and must be skipped, not resolved as a parameter.
 lookup_options:
-  rootless_gitlab_runner::tokens:
+  rootless_gitlab_runner::runner_tokens:
     convert_to: 'Sensitive'
 rootless_gitlab_runner::concurrent: 1
 rootless_gitlab_runner::check_interval: 0

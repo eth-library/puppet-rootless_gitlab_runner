@@ -37,7 +37,7 @@ class rootless_gitlab_runner::config {
   # step, so fail loud instead of registering a runner with a blank token. With
   # no store at all (CI, checkouts without secrets), blank tokens render by
   # design.
-  $tokens = $rootless_gitlab_runner::tokens.unwrap
+  $tokens = $rootless_gitlab_runner::runner_tokens.unwrap
   $rendered_runners = $rootless_gitlab_runner::effective_runners.map |$r| {
     $tk = $r['token_key']
     if !$tokens.empty {

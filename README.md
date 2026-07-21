@@ -484,7 +484,7 @@ runner token, never a GitLab credential that could register or delete runners.
 
 *Standalone only. In a fleet, catalogs compile on the Puppet server, so the host-local file
 described below is inert there.* Fleet consumers supply
-`rootless_gitlab_runner::tokens` through their server-side secrets machinery instead (for
+`rootless_gitlab_runner::runner_tokens` through their server-side secrets machinery instead (for
 example [hiera-eyaml](https://github.com/voxpupuli/hiera-eyaml)); everything else in this
 section (the `token_key` indirection, blank-render versus fail-loud, the token at rest)
 applies unchanged.
@@ -510,11 +510,11 @@ hiera-eyaml backend encrypts it at rest.
 
 ```yaml
 ---
-rootless_gitlab_runner::tokens:
+rootless_gitlab_runner::runner_tokens:
   runner_a: 'glrt-REDACTED'      # token for the runner whose token_key is 'runner_a'
 ```
 
-The top-level key must be exactly `rootless_gitlab_runner::tokens`. A store file that exists but
+The top-level key must be exactly `rootless_gitlab_runner::runner_tokens`. A store file that exists but
 uses a different top-level key (a bare `tokens:`, or a typo) resolves as an *absent* store, not an
 error: tokens render blank per the empty-store contract that lets a checkout without secrets still
 compile, and the mistake only shows up when the runner cannot reach GitLab. Check that key first
@@ -561,7 +561,7 @@ every apply; before the first apply, create it by hand:
 sudo install -d -m 0700 /etc/gitlab-runner-infra
 ```
 
-Add or update entries under `rootless_gitlab_runner::tokens`:
+Add or update entries under `rootless_gitlab_runner::runner_tokens`:
 
 ```
 sudoedit /etc/gitlab-runner-infra/secrets.yaml
