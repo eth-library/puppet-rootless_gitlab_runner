@@ -190,6 +190,33 @@ describe 'rootless_gitlab_runner' do
     end
   end
 
+  # The shipped example data is held to the same rule the data-versus-surface
+  # check (scripts/check_hiera_data.rb) enforces on a consumer repository:
+  # every rootless_gitlab_runner:: key under examples/data/ must name a
+  # declared parameter of the compiled class — Hiera silently ignores any
+  # other key, so a stale example would teach consumers an inert key.
+  context 'examples/data keys match the declared parameter surface' do
+    let(:facts) { UBUNTU_FACTS }
+    # Compiled with the example data itself: a stray key in the two skeleton
+    # files aborts the compile outright ("no parameter named ..."), and every
+    # accepted key lands in the class resource's parameter set. The catalog
+    # omits parameters left at an undef default, so the walk below compares
+    # against the compiled set, which includes every key the examples set.
+    let(:params) { example_data_params }
+
+    it 'declares every rootless_gitlab_runner:: key set under examples/data' do
+      declared = catalogue.resource('Class', 'rootless_gitlab_runner').parameters.keys.map(&:to_s)
+      example_files = Dir.glob(File.expand_path(File.join(__dir__, '..', '..', 'examples', 'data', '**', '*.{yaml,eyaml}')))
+      expect(example_files).not_to be_empty
+      strays = example_files
+               .flat_map { |f| YAML.safe_load(File.read(f)).to_h.keys }
+               .select { |k| k.start_with?('rootless_gitlab_runner::') }
+               .map { |k| k.delete_prefix('rootless_gitlab_runner::') }
+               .reject { |param| declared.include?(param) }
+      expect(strays).to be_empty
+    end
+  end
+
   context 'with packages listed' do
     let(:params) { { 'packages' => %w[uidmap dbus-user-session] } }
 
