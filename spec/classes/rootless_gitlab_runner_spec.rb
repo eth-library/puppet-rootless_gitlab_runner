@@ -75,6 +75,13 @@ describe 'rootless_gitlab_runner' do
       )
     end
 
+    it 'wraps the rendered configuration content Sensitive so tokens stay out of the catalog' do
+      # A Sensitive-wrapped parameter lands in the catalog as the raw value
+      # flagged sensitive — the flag is what redacts it from reports and diffs.
+      expect(catalogue.resource('File', '/etc/gitlab-runner/config.toml').sensitive_parameters)
+        .to include(:content)
+    end
+
     it 'always pins DETACH_NETNS=false via the no-detach-netns drop-in' do
       is_expected.to contain_file(
         '/home/gitlab-runner/.config/systemd/user/docker.service.d/no-detach-netns.conf',
