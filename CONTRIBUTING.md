@@ -306,7 +306,8 @@ A few pieces are worth knowing beyond the plain parameter-and-guard examples:
   check a consumer control repository wires into its CI (see the README's
   [Validating Hiera data in CI](README.md#validating-hiera-data-in-ci)) — against fixture
   control-repository layouts under `spec/fixtures/data_check/`, including the stray-key shape
-  observed in a live consumer. A catalog example additionally holds every
+  observed in a live consumer; each fixture is described in that directory's
+  [README](spec/fixtures/data_check/README.md). A catalog example additionally holds every
   `rootless_gitlab_runner::` key under `examples/data/` to the declared parameter surface, so
   the shipped examples cannot drift. Both ride `just test`, and therefore `just check` and CI.
 - **Facts:** Examples that need a compiled catalog use the supported OS's facts, derived
