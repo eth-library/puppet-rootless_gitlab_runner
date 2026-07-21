@@ -39,7 +39,7 @@ describe 'scripts/check_hiera_data.rb' do
       output, status = run_check(File.join(CHECK_FIXTURES, 'consumer_stray'), REAL_MODULE_PATH)
       expect(status.exitstatus).to eq(1)
       expect(output).to match(/FAIL .*common\.yaml: 'rootless_gitlab_runner::session_timeout' — class 'rootless_gitlab_runner' declares no parameter 'session_timeout'/)
-      expect(output).to match(/FAIL .*host1\.yaml: 'no_such_module::thing' — class 'no_such_module' is not in the deployed modules/)
+      expect(output).to match(/FAIL .*ci-runner\.yaml: 'no_such_module::thing' — class 'no_such_module' is not in the deployed modules/)
       # Declared keys from the same files are not flagged.
       expect(output).not_to match(/FAIL .*'rootless_gitlab_runner::concurrent'/)
       expect(output).not_to match(/FAIL .*'rootless_gitlab_runner::runner_uid'/)
@@ -65,7 +65,7 @@ describe 'scripts/check_hiera_data.rb' do
     it 'fails on a stray key inside an eyaml file (key names are plaintext)' do
       output, status = run_check(File.join(CHECK_FIXTURES, 'eyaml_stray'), DEMO_MODULES)
       expect(status.exitstatus).to eq(1)
-      expect(output).to match(/FAIL .*host1\.eyaml: 'demo::beta' — class 'demo' declares no parameter 'beta'/)
+      expect(output).to match(/FAIL .*ci-runner\.eyaml: 'demo::beta' — class 'demo' declares no parameter 'beta'/)
       expect(output).not_to match(/FAIL .*'demo::alpha'/)
     end
 
@@ -73,7 +73,7 @@ describe 'scripts/check_hiera_data.rb' do
       output, status = run_check(File.join(CHECK_FIXTURES, 'advisory'), DEMO_MODULES)
       expect(status.exitstatus).to eq(0)
       expect(output).to match(/advisory \(non-failing\): 'demo::standalone': effective 'manage' is false/)
-      expect(output).to match(/self_update.*host1\.yaml/)
+      expect(output).to match(/self_update.*ci-runner\.yaml/)
     end
 
     it 'emits no advisory when a higher-priority layer turns manage on' do
