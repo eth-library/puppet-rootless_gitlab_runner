@@ -27,6 +27,7 @@ daemon it depends on.
   - [Host-specific values](#host-specific-values)
   - [File layout](#file-layout)
   - [Declaring runners](#declaring-runners)
+  - [Validating Hiera data in CI](#validating-hiera-data-in-ci)
 - [Security](#security)
   - [Why rootless](#why-rootless)
   - [What the module locks down](#what-the-module-locks-down)
@@ -392,6 +393,42 @@ this does not touch; delete it there too ([Removing a runner](#removing-a-runner
 
 The complete parameter reference, generated from the code's own documentation, is in
 [REFERENCE.md](REFERENCE.md).
+
+### Validating Hiera data in CI
+
+Hiera's automatic parameter lookup resolves only the parameters a class declares. Any other
+`class::param` key in the control repository's data — a typo, or a key left over from an older
+module version — is **silently ignored**: the catalog compiles, the apply succeeds, and the
+intended configuration never lands. Nothing in Puppet or PDK catches this for a standalone
+`puppet apply` topology.
+
+The module therefore ships a data-versus-surface check,
+[`scripts/check_hiera_data.rb`](scripts/check_hiera_data.rb): it reads the declared parameter
+surface of the deployed modules (via `puppet strings`, the tool behind
+[REFERENCE.md](REFERENCE.md)) and fails, listing every offender, when a key in the data
+directory names a class absent from the deployed modules or a parameter no class declares.
+Run it in the control repository's CI after `r10k puppetfile install`, so every merge request
+that touches data is gated:
+
+```
+ruby puppet/modules/rootless_gitlab_runner/scripts/check_hiera_data.rb --data-dir puppet/data --hiera-config puppet/hiera.yaml --modulepath puppet/modules
+```
+
+[`examples/gitlab-ci.example.yml`](examples/gitlab-ci.example.yml) is a minimal copy-paste
+pipeline (parser validation, YAML lint, this check) for a standalone control repository; the
+same command also works as a pre-commit hook for local feedback. Two behaviors to know:
+
+- **Advisory, non-failing:** subkeys set under a hash parameter whose effective `manage`
+  toggle resolves to `false` are recognized but inert (the module is hands-off that concern).
+  The check reports them as an advisory rather than a failure — declaring the state of an
+  externally owned concern can be intentional — and a human judges intent.
+- **Stated limits:** the check validates key names, not values (types are the compiler's job,
+  enforced at compile time), and it cannot see data layers outside the repository, such as the
+  off-repository secret store. Hierarchy levels addressed by `glob`/`globs` or `mapped_paths`
+  are not modeled; advisory resolution covers `path`/`paths` levels only.
+
+The module's own [`examples/data/`](examples/data/) is held to the same rule by the unit
+suite, so the shipped examples cannot drift from the parameter surface.
 
 ## Security
 

@@ -235,10 +235,15 @@ the public class is the only entry point.
 │   ├── hiera.yaml                #   standalone hierarchy (datadir: data, sits beside data/)
 │   ├── site.pp                   #   standalone entry: include rootless_gitlab_runner
 │   ├── Puppetfile                #   r10k pinning for the masterless wrapper repository
+│   ├── gitlab-ci.example.yml     #   copy-paste CI for a control repository (incl. the data check)
 │   └── secrets.example.yaml      #   off-repository token-store template (never committed)
+├── scripts/
+│   └── check_hiera_data.rb       # Hiera data-versus-surface check (consumer CI; unit-tested here)
 ├── spec/
 │   ├── classes/                  # rspec-puppet tests (catalog + golden files)
+│   ├── unit/                     # plain rspec: the data-versus-surface check script
 │   ├── fixtures/golden/          # committed expected renders (config.toml + shell scripts)
+│   ├── fixtures/data_check/      # control-repository fixtures for the data check
 │   └── fixtures/modules/         # module symlink + fetched fixtures (.fixtures.yml)
 ├── .github/workflows/ci.yml      # CI: same shell, same recipes (see CI/CD)
 ├── .github/dependabot.yml        # weekly grouped updates: actions, gems, flake inputs
@@ -297,6 +302,14 @@ A few pieces are worth knowing beyond the plain parameter-and-guard examples:
   on purpose (see the [walkthrough](#walkthrough-adding-a-configuration-option)). The two
   shell scripts are additionally piped through `shellcheck`; that check is skipped only
   when `shellcheck` is not on `PATH` (it is in the dev shell and in CI).
+- **Data-versus-surface check:** `spec/unit/` exercises `scripts/check_hiera_data.rb` — the
+  check a consumer control repository wires into its CI (see the README's
+  [Validating Hiera data in CI](README.md#validating-hiera-data-in-ci)) — against fixture
+  control-repository layouts under `spec/fixtures/data_check/`, including the stray-key shape
+  observed in a live consumer; each fixture is described in that directory's
+  [README](spec/fixtures/data_check/README.md). A catalog example additionally holds every
+  `rootless_gitlab_runner::` key under `examples/data/` to the declared parameter surface, so
+  the shipped examples cannot drift. Both ride `just test`, and therefore `just check` and CI.
 - **Facts:** Examples that need a compiled catalog use the supported OS's facts, derived
   from `metadata.json` via `on_supported_os` (rspec-puppet-facts), so the fact set tracks
   the module's declared platform support instead of a hand-kept hash.

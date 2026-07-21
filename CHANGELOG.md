@@ -7,6 +7,10 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- A Hiera data check ships with the module: it fails on any data key that no deployed class declares, instead of Hiera silently ignoring it, and flags set-but-inert subkeys under a disabled `manage` toggle with a non-failing advisory.
+
 ### Changed
 
 - Subordinate UID/GID ranges are now provisioned by `manage_rootless_docker`, together with the other rootless-Docker prerequisites, instead of by `manage_runner_user`: rootless Docker can now be brought up on a host whose runner user is owned by another system. An existing range entry is never overwritten, and `manage_runner_user` keeps owning the group, user, and home.

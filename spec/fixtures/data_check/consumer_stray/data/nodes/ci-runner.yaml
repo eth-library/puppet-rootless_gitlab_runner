@@ -1,0 +1,5 @@
+---
+# A key whose class is not deployed at all fails with the missing-class
+# message, not the missing-parameter one.
+no_such_module::thing: 1
+rootless_gitlab_runner::runner_uid: 1111

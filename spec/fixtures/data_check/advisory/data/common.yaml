@@ -1,0 +1,6 @@
+---
+# The struct's toggle is off in the common layer and no node layer overrides
+# it: subkeys set under it are recognized but inert — advisory, not failure.
+demo::alpha: 2
+demo::standalone:
+  manage: false

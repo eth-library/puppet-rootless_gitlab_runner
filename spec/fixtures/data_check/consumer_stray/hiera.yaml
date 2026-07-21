@@ -1,0 +1,14 @@
+---
+# Fixture hierarchy mirroring a consumer control repository: per-node data
+# over common defaults.
+version: 5
+
+defaults:
+  datadir: data
+  data_hash: yaml_data
+
+hierarchy:
+  - name: 'Per-node'
+    path: 'nodes/%{facts.networking.hostname}.yaml'
+  - name: 'Common defaults'
+    path: 'common.yaml'

@@ -1,0 +1,5 @@
+---
+# The common layer turns the toggle off, but the node layer overrides it to
+# true: hierarchy order must win, so no advisory fires for this node.
+demo::standalone:
+  manage: false

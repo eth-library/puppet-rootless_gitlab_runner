@@ -30,3 +30,10 @@ on the host — `Puppetfile` at the repo root; `hiera.yaml`, `site.pp` (as
 `hiera.yaml` keeps `data/` beside it (`datadir: data`), so it resolves unchanged in either
 place. The README [Installation](../README.md#installation) section walks the bring-up end to
 end.
+
+## CI for the control repository
+
+- **`gitlab-ci.example.yml`** — a minimal GitLab CI pipeline for the assembled control
+  repository: parser validation, YAML lint, and the module's Hiera data-versus-surface check
+  (see the README [Validating Hiera data in CI](../README.md#validating-hiera-data-in-ci)). Copy
+  it to `.gitlab-ci.yml` at the repository root; the paths match the skeleton layout above.

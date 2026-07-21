@@ -1,0 +1,45 @@
+---
+# Copy-paste CI for a control repository consuming this module (GitLab CI:
+# save as .gitlab-ci.yml at the repository root). Three checks gate every
+# change: parser validation, YAML lint, and the Hiera data-versus-surface
+# check the module ships (scripts/check_hiera_data.rb) — a class::param key
+# that no deployed class declares fails the pipeline instead of being
+# silently ignored by Hiera. The check validates key names, not values, and
+# cannot see data layers outside the repository (the off-repository secret
+# store).
+#
+# Deliberately small and unpinned so the snippet cannot go stale; pin the
+# images and gem versions in the control repository where reproducibility
+# matters. Paths follow the skeleton layout in this directory (Puppetfile at
+# the root, hiera.yaml and data/ under puppet/).
+stages:
+  - validate
+
+puppet-validate:
+  stage: validate
+  image: ruby:slim
+  before_script:
+    - apt-get update && apt-get install -y --no-install-recommends build-essential
+    - gem install --no-document puppet
+  script:
+    - find puppet -name '*.pp' -not -path '*/modules/*' -print0 | xargs -0 -r puppet parser validate
+
+yaml-lint:
+  stage: validate
+  image: python:slim
+  before_script:
+    - pip install --no-cache-dir yamllint
+  script:
+    - yamllint .
+
+hiera-data-check:
+  stage: validate
+  image: ruby:slim
+  before_script:
+    # git serves r10k's git-pinned modules
+    - apt-get update && apt-get install -y --no-install-recommends git build-essential
+    - gem install --no-document puppet puppet-strings r10k
+  script:
+    - r10k puppetfile install --puppetfile Puppetfile --moduledir puppet/modules
+    - ruby puppet/modules/rootless_gitlab_runner/scripts/check_hiera_data.rb
+      --data-dir puppet/data --hiera-config puppet/hiera.yaml --modulepath puppet/modules
