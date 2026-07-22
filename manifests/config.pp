@@ -3,11 +3,12 @@
 class rootless_gitlab_runner::config {
   assert_private()
 
-  $runner_name = $rootless_gitlab_runner::runner_account['name']
-  # Primary group, defaulting to the account name (derived in init.pp). Owners
-  # stay the account name; only the group ownerships derive from it.
+  # Identity locals hoisted in init.pp. Owners stay the account name; only the
+  # group ownerships derive from $runner_group (the account's primary group,
+  # defaulting to the name).
+  $runner_name  = $rootless_gitlab_runner::runner_name
   $runner_group = $rootless_gitlab_runner::runner_group
-  $runner_home = $rootless_gitlab_runner::runner_account['home']
+  $runner_home  = $rootless_gitlab_runner::runner_home
   $configuration_file_path = $rootless_gitlab_runner::configuration_file['path']
 
   $socket_path = $rootless_gitlab_runner::socket_path

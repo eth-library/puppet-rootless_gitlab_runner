@@ -34,8 +34,8 @@ class rootless_gitlab_runner::service {
       group   => 'root',
       mode    => '0644',
       content => epp('rootless_gitlab_runner/service-dropin.conf.epp', {
-        'runner_name'             => $rootless_gitlab_runner::runner_account['name'],
-        'runner_home'             => $rootless_gitlab_runner::runner_account['home'],
+        'runner_name'             => $rootless_gitlab_runner::runner_name,
+        'runner_home'             => $rootless_gitlab_runner::runner_home,
         'configuration_file_path' => $rootless_gitlab_runner::configuration_file['path'],
         'environment'             => $rootless_gitlab_runner::real_service_environment,
         'timeout_stop_sec'        => $rootless_gitlab_runner::runner_service['timeout_stop_sec'],

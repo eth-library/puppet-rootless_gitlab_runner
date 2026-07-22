@@ -302,14 +302,17 @@ class rootless_gitlab_runner (
     ]))
   }
 
-  # The account's primary group, derived once and read as a group by every
-  # concern (the group resource and the user's gid in user.pp, and every
-  # managed file's group in config.pp). The data layer cannot express "same as
-  # the account name", so the default is an absent key and the fallback lives
-  # here: an unset group follows the account name — correct by construction
-  # where the module creates the account — while a set group names the
-  # differently named primary group of an externally provisioned account.
-  $runner_group = pick($runner_account['group'], $runner_account['name'])
+  # The runner account's identity, hoisted once so every concern reads a local
+  # instead of re-subscripting runner_account per file. The primary group is
+  # read as a group everywhere the account name used to double as one (the
+  # group resource and the user's gid in user.pp, every managed file's group in
+  # config.pp); it defaults to the account name, since the data layer cannot
+  # express "same as the name" — an unset group falls back here, correct by
+  # construction where the module creates the account, while a set group names
+  # the differently named primary group of an externally provisioned account.
+  $runner_name  = $runner_account['name']
+  $runner_home  = $runner_account['home']
+  $runner_group = pick($runner_account['group'], $runner_name)
 
   # Defaults merged under every runner entry; keys set on the entry win.
   $effective_runners = $runners.map |$r| { $runner_defaults + $r }
@@ -333,8 +336,8 @@ class rootless_gitlab_runner (
   # root Puppet provides neither XDG_RUNTIME_DIR nor DBUS_SESSION_BUS_ADDRESS,
   # and systemctl --user / the setuptool fail without them.
   $runner_user_env = [
-    "HOME=${runner_account['home']}",
-    "USER=${runner_account['name']}",
+    "HOME=${runner_home}",
+    "USER=${runner_name}",
     "XDG_RUNTIME_DIR=${runtime_dir}",
     "DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime_dir}/bus",
   ]
@@ -370,7 +373,7 @@ class rootless_gitlab_runner (
   # type never creates parents, so config.pp manages the whole chain to place
   # the no-detach-netns drop-in; rootless_docker.pp reads $user_systemd_dir for
   # the docker.service the setuptool generates there.
-  $user_config_dir         = "${runner_account['home']}/.config"
+  $user_config_dir         = "${runner_home}/.config"
   $user_config_systemd_dir = "${user_config_dir}/systemd"
   $user_systemd_dir        = "${user_config_systemd_dir}/user"
 

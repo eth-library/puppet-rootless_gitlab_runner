@@ -4,8 +4,8 @@ class rootless_gitlab_runner::rootless_docker {
   assert_private()
 
   if $rootless_gitlab_runner::rootless_docker['manage'] {
-    $runner_user = $rootless_gitlab_runner::runner_account['name']
-    $runner_home = $rootless_gitlab_runner::runner_account['home']
+    $runner_user = $rootless_gitlab_runner::runner_name
+    $runner_home = $rootless_gitlab_runner::runner_home
     $runner_uid  = $rootless_gitlab_runner::runner_account['uid']
     $runtime_dir = $rootless_gitlab_runner::runtime_dir
     $user_env    = $rootless_gitlab_runner::runner_user_env

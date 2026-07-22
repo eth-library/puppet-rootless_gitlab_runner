@@ -49,7 +49,7 @@ class rootless_gitlab_runner::self_update {
       group   => 'root',
       mode    => '0755',
       content => epp('rootless_gitlab_runner/healthcheck.sh.epp', {
-        'runner_name'               => $rootless_gitlab_runner::runner_account['name'],
+        'runner_name'               => $rootless_gitlab_runner::runner_name,
         'runtime_dir'               => $rootless_gitlab_runner::runtime_dir,
         'socket_path'               => $rootless_gitlab_runner::socket_path,
         'control_repository_path'   => $control_repository_path,
