@@ -247,14 +247,8 @@ class rootless_gitlab_runner (
     install => Array[String[1]],
     sources => Struct[{
       manage        => Boolean,
-      docker        => Struct[{
-        location   => Stdlib::HTTPUrl,
-        key_source => Stdlib::HTTPUrl,
-      }],
-      gitlab_runner => Struct[{
-        location   => Stdlib::HTTPUrl,
-        key_source => Stdlib::HTTPUrl,
-      }],
+      docker        => Rootless_gitlab_runner::Apt_source,
+      gitlab_runner => Rootless_gitlab_runner::Apt_source,
     }],
   }]                               $packages,
   Struct[{

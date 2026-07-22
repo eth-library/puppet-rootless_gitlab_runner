@@ -26,6 +26,7 @@
 
 ### Data types
 
+* [`Rootless_gitlab_runner::Apt_source`](#Rootless_gitlab_runner--Apt_source): An apt source's location and signing-key endpoint.
 * [`Rootless_gitlab_runner::Username`](#Rootless_gitlab_runner--Username): A strict POSIX-portable Linux username.
 
 ## Classes
@@ -234,14 +235,8 @@ Struct[{
     install => Array[String[1]],
     sources => Struct[{
       manage        => Boolean,
-      docker        => Struct[{
-        location   => Stdlib::HTTPUrl,
-        key_source => Stdlib::HTTPUrl,
-      }],
-      gitlab_runner => Struct[{
-        location   => Stdlib::HTTPUrl,
-        key_source => Stdlib::HTTPUrl,
-      }],
+      docker        => Rootless_gitlab_runner::Apt_source,
+      gitlab_runner => Rootless_gitlab_runner::Apt_source,
     }],
   }]
 ```
@@ -427,6 +422,23 @@ Data type: `String`
 the raw string to escape
 
 ## Data types
+
+### <a name="Rootless_gitlab_runner--Apt_source"></a>`Rootless_gitlab_runner::Apt_source`
+
+`location` and `key_source` are verbatim `apt::source` parameter names: the
+repository URL (suite = OS codename) and the URL of its armored signing key,
+stored as an apt keyring. Both the Docker and GitLab Runner sources under
+`packages.sources` share this shape, pointing at a vendor repository or a
+mirror.
+
+Alias of
+
+```puppet
+Struct[{
+  location   => Stdlib::HTTPUrl,
+  key_source => Stdlib::HTTPUrl,
+}]
+```
 
 ### <a name="Rootless_gitlab_runner--Username"></a>`Rootless_gitlab_runner::Username`
 
