@@ -1,6 +1,6 @@
 ---
 # The node layer owns the concern (manage: true), so its subkeys are live —
-# nothing inert to report.
+# nothing unenforced to report.
 demo::standalone:
   manage: true
   self_update:
