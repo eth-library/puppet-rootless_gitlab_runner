@@ -1,16 +1,10 @@
 <%- | Integer $concurrent,
-      Integer $check_interval,
-      String  $connection_max_age,
-      Integer $shutdown_timeout,
       Array   $runners,
       Optional[String] $docker_socket_path,
 | -%>
 # Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file is
 # overwritten on the next apply.
 concurrent = <%= $concurrent %>
-check_interval = <%= $check_interval %>
-connection_max_age = "<%= rootless_gitlab_runner::toml_escape($connection_max_age) %>"
-shutdown_timeout = <%= $shutdown_timeout %>
 <% $runners.each |$r| { -%>
 <%-   $base_vols = $r['volumes'] =~ Array ? { true => $r['volumes'], default => [] } -%>
 <%-   $vols = $r['socket_mount'] == true ? {

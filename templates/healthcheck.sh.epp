@@ -1,5 +1,4 @@
-<%- | String $service_name,
-      String $runner_user,
+<%- | String $runner_user,
       String $runtime_dir,
       String $socket_path,
       String $repo_path,
@@ -31,8 +30,8 @@ as_runner() {
     "$@"
 }
 
-systemctl is-active --quiet '<%= $service_name %>' \
-  || err "manager service '<%= $service_name %>' is not active"
+systemctl is-active --quiet 'gitlab-runner' \
+  || err "manager service 'gitlab-runner' is not active"
 
 # The apply timer drives self-update; a disabled or stopped timer silently
 # halts convergence and would otherwise surface only later as checkout

@@ -66,7 +66,7 @@ describe 'rootless_gitlab_runner' do
         .that_requires('File[/home/gitlab-runner/.config/systemd/user/docker.service.d]')
     end
 
-    it 'manages the runner config, root-owned mode 0600 semantics' do
+    it 'manages the runner config owned by the runner user, fixed mode 0600' do
       is_expected.to contain_file('/etc/gitlab-runner/config.toml').with(
         'ensure' => 'file',
         'owner'  => 'gitlab-runner',
@@ -308,7 +308,7 @@ describe 'rootless_gitlab_runner' do
                           'image' => 'i', 'socket_mount' => true }] }
       end
 
-      it { is_expected.to compile.and_raise_error(%r{set runner_uid or docker_socket_path}) }
+      it { is_expected.to compile.and_raise_error(%r{set runner_uid}) }
     end
 
     context 'with a privilege-dropped service and no derivable DOCKER_HOST' do
@@ -559,35 +559,59 @@ describe 'rootless_gitlab_runner' do
         .with_content(%r{^Environment=DOCKER_HOST=unix:///run/user/4242/docker\.sock$})
     end
 
-    it 'defaults to a graceful-shutdown KillSignal=SIGQUIT and no TimeoutStopSec' do
+    it 'hardcodes the graceful-shutdown KillSignal=SIGQUIT and renders no TimeoutStopSec by default' do
       is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
         .with_content(%r{^KillSignal=SIGQUIT$})
         .without_content(%r{^TimeoutStopSec=})
     end
 
-    context 'with a custom kill signal and stop timeout' do
-      let(:params) { super().merge('service_kill_signal' => 'SIGTERM', 'service_timeout_stop_sec' => 7200) }
+    context 'with a stop timeout for long drains' do
+      let(:params) { super().merge('service_timeout_stop_sec' => 7200) }
 
-      it 'renders the configured KillSignal and TimeoutStopSec' do
+      it 'renders the configured TimeoutStopSec and keeps the fixed KillSignal' do
         is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
-          .with_content(%r{^KillSignal=SIGTERM$})
+          .with_content(%r{^KillSignal=SIGQUIT$})
           .with_content(%r{^TimeoutStopSec=7200$})
       end
     end
+  end
 
-    context 'with service_user root' do
-      let(:params) { super().merge('service_user' => 'root') }
+  # The ownership-derivation contract (the 1.x latent wrong-owner bug): a
+  # non-default runner user and home must flow into every derived resource —
+  # file ownership, the drop-in path, the service ExecStart, the socket path.
+  context 'with a non-default runner user and home' do
+    let(:params) do
+      {
+        'runner_user'           => 'ci-worker',
+        'runner_uid'            => 5000,
+        'runner_home'           => '/srv/ci-worker',
+        'manage_runner_service' => true,
+      }
+    end
 
-      it 'keeps the packaged posture: no User=, no ExecStart reset' do
-        is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
-          .without_content(%r{^User=})
-          .without_content(%r{^ExecStart=})
-      end
+    it { is_expected.to compile.with_all_deps }
 
-      it 'still applies the graceful-shutdown KillSignal (independent of privilege drop)' do
-        is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
-          .with_content(%r{^KillSignal=SIGQUIT$})
-      end
+    it 'derives the config file ownership from the runner user' do
+      is_expected.to contain_file('/etc/gitlab-runner/config.toml')
+        .with('owner' => 'ci-worker', 'group' => 'ci-worker')
+    end
+
+    it 'derives the config directory group and system-id ownership from the runner user' do
+      is_expected.to contain_file('/etc/gitlab-runner').with('group' => 'ci-worker')
+      is_expected.to contain_file('/etc/gitlab-runner/.runner_system_id')
+        .with('owner' => 'ci-worker', 'group' => 'ci-worker')
+    end
+
+    it 'derives the no-detach-netns drop-in path and ownership from the runner home and user' do
+      is_expected.to contain_file('/srv/ci-worker/.config/systemd/user/docker.service.d/no-detach-netns.conf')
+        .with('owner' => 'ci-worker', 'group' => 'ci-worker')
+    end
+
+    it 'derives the privilege drop, working directory and socket from the runner identity' do
+      is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
+        .with_content(%r{^User=ci-worker$})
+        .with_content(%r{^ExecStart=/usr/bin/gitlab-runner run --working-directory /srv/ci-worker --config /etc/gitlab-runner/config\.toml --service gitlab-runner$})
+        .with_content(%r{^Environment=DOCKER_HOST=unix:///run/user/5000/docker\.sock$})
     end
   end
 
@@ -604,6 +628,19 @@ describe 'rootless_gitlab_runner' do
         .with_content(%r{--vardir "/var/lib/grunner-puppet"})
         .with_content(%r{--detailed-exitcodes})
         .with_content(%r{"/opt/gitlab-runner-infra/puppet/manifests/site\.pp"})
+    end
+
+    context 'with a non-default repo_path' do
+      let(:params) { super().merge('repo_path' => '/opt/infra') }
+
+      it 'derives every apply path from the control repository layout' do
+        is_expected.to contain_file('/usr/local/sbin/rootless-gitlab-runner-apply')
+          .with_content(%r{--puppetfile "/opt/infra/Puppetfile"})
+          .with_content(%r{--moduledir "/opt/infra/puppet/modules"})
+          .with_content(%r{--modulepath "/opt/infra/puppet/modules"})
+          .with_content(%r{--hiera_config "/opt/infra/puppet/hiera\.yaml"})
+          .with_content(%r{"/opt/infra/puppet/manifests/site\.pp"})
+      end
     end
 
     it 'renders the apply service: HOME=/root, PATH to the AIO bindir, timeout, verify-commit, exit 2 = success' do
@@ -635,22 +672,11 @@ describe 'rootless_gitlab_runner' do
       end
     end
 
-    it 'renders no OnFailure hook by default' do
+    it 'renders no OnFailure hook (failure surfacing is the failed unit itself)' do
       is_expected.to contain_file('/etc/systemd/system/gitlab-runner-apply.service')
         .without_content(%r{OnFailure})
       is_expected.to contain_file('/etc/systemd/system/gitlab-runner-healthcheck.service')
         .without_content(%r{OnFailure})
-    end
-
-    context 'with an on_failure_unit alerting hook' do
-      let(:params) { super().merge('on_failure_unit' => 'notify-failure@%n.service') }
-
-      it 'renders OnFailure= on both the apply and healthcheck services' do
-        ['gitlab-runner-apply.service', 'gitlab-runner-healthcheck.service'].each do |u|
-          is_expected.to contain_file("/etc/systemd/system/#{u}")
-            .with_content(%r{^OnFailure=notify-failure@%n\.service$})
-        end
-      end
     end
 
     it 'renders the healthcheck with daemon probe, apply-timer and SHA-staleness assertions' do

@@ -3,7 +3,6 @@
       String $repo_branch,
       String $apply_timeout,
       String $puppet_bindir,
-      Optional[String] $on_failure_unit,
 | -%>
 # Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
 # is overwritten on the next apply.
@@ -12,9 +11,6 @@ Description=Apply the rootless GitLab Runner configuration (standalone self-upda
 After=network-online.target
 Wants=network-online.target
 AssertPathExists=<%= $apply_script %>
-<%- if $on_failure_unit =~ NotUndef { -%>
-OnFailure=<%= $on_failure_unit %>
-<%- } -%>
 
 [Service]
 Type=oneshot

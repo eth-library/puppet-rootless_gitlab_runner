@@ -296,11 +296,12 @@ unprivileged one — see [Security](#security).
 
 With `manage_runner_service` on, the module owns the `gitlab-runner` system service, a
 systemd drop-in for it (`/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf`), and
-the mode on `/etc/gitlab-runner` so the privilege-dropped manager can read its own config. By
-default the drop-in runs the manager privilege-dropped as the runner user, with `DOCKER_HOST`
-pointed at the rootless docker socket. The posture is data, not a separate toggle:
-`rootless_gitlab_runner::service_user` (set `'root'` to keep the packaged root-running unit) and
-`rootless_gitlab_runner::service_environment` (the environment lines rendered into the drop-in).
+the mode on `/etc/gitlab-runner` so the privilege-dropped manager can read its own config. The
+drop-in runs the manager privilege-dropped as the runner user — that is the module's posture,
+not a knob — with `DOCKER_HOST` pointed at the derived rootless docker socket;
+`rootless_gitlab_runner::service_environment` overrides the environment lines rendered into
+the drop-in, and `rootless_gitlab_runner::service_timeout_stop_sec` sets the graceful-drain
+window ([Restarts and graceful shutdown](#restarts-and-graceful-shutdown)).
 
 #### `manage_standalone_self_update`
 
@@ -330,7 +331,7 @@ but needed; `repo_path` is defaulted but host-specific:
 
 | Parameter | Description | Default |
 |---|---|---|
-| `runner_uid` | Numeric uid of the runner user; the rootless runtime paths (`/run/user/<uid>`, the docker socket) derive from it | none — required when `manage_runner_user`, `manage_rootless_docker` or `manage_standalone_self_update` is on, or for a `socket_mount` runner without `docker_socket_path` |
+| `runner_uid` | Numeric uid of the runner user; the rootless runtime paths (`/run/user/<uid>`, the docker socket) derive from it | none — required when `manage_runner_user`, `manage_rootless_docker` or `manage_standalone_self_update` is on, or for a `socket_mount` runner |
 | `repo_path` | Checkout of the control repository on the host (the self-update target) | `/opt/gitlab-runner-infra` |
 
 A wrong `repo_path` is caught at runtime — by the self-update service's fetch and the
@@ -455,8 +456,8 @@ kernel's user namespace enforces it on every container, with no operator action 
   masked, so the only container daemon on the host is the rootless one.
 - Only the runner user (with its `DOCKER_HOST`) reaches the daemon; the system-wide `docker` CLI
   is inert for everyone else.
-- The runner **manager service** drops to the runner user as its reference posture
-  (`service_user`), so not even the manager runs as root.
+- The runner **manager service** always drops to the runner user, so not even the manager
+  runs as root.
 - Runner **tokens** are handled as `Sensitive` values and stay file-private to the runner uid (see
   [Secrets](#secrets)).
 
@@ -716,8 +717,9 @@ about 3 seconds on its own. The only thing that restarts the manager is a change
 unit files (for example the module's privilege-drop drop-in). Where the module manages the runner
 service, that restart sends **SIGQUIT** [\[20\]](#ref-20), which GitLab Runner treats as a graceful shutdown: it
 stops taking new jobs and lets running ones finish instead of aborting them, which systemd's
-default SIGTERM would do. Tune it with `service_kill_signal` and `service_timeout_stop_sec` — set
-`TimeoutStopSec` [\[21\]](#ref-21) to the longest job a drain should wait for before systemd escalates to SIGKILL
+default SIGTERM would do. The graceful-drain signal is fixed; the drain window is data — set
+`service_timeout_stop_sec` (systemd's `TimeoutStopSec` [\[21\]](#ref-21)) to the longest job a drain should
+wait for before systemd escalates to SIGKILL
 (GitLab's documented example is `7200`; unset, systemd's default of roughly 90s applies).
 
 ### Automating with systemd
@@ -735,9 +737,11 @@ systemd serialises runs (a oneshot service never overlaps itself, so no external
 needed), and `SuccessExitStatus=2` treats Puppet's "changes applied" exit code as success, so only
 genuine failures are flagged. A failure leaves the unit in the failed state, visible in the
 journal, in `systemctl list-units --failed`, and to any host monitoring that watches failed
-units. For a push alert, set `on_failure_unit` to a systemd unit of your own (e.g.
-`notify-failure@%n.service`); the module renders it as `OnFailure=` on both the apply and
-healthcheck services, so a failed tick activates it.
+units. For a push alert, attach `OnFailure=` to the apply or healthcheck service through a
+host-side drop-in (for example
+`/etc/systemd/system/gitlab-runner-apply.service.d/alert.conf` naming an alerting unit such as
+`notify-failure@%n.service`); alerting units are deliberately consumer-side, not a module
+parameter.
 Auto-deploying `main` this way is safe because `main` is protected (merge request review plus a
 required green pipeline) and only signed commits pass the `git verify-commit` gate, which
 depends on the trust chain in [Self-update prerequisites](#self-update-prerequisites) below.
@@ -848,8 +852,7 @@ runuser -u gitlab-runner -- env "XDG_RUNTIME_DIR=/run/user/$(id -u gitlab-runner
 That `runuser`/`env` shape is not optional decoration: the runner is a **no-login system user**,
 so a plain `su`/`sudo -u` shell has no systemd user session, so `XDG_RUNTIME_DIR` and
 `DOCKER_HOST` must point explicitly at its `/run/user/<uid>` tree to reach the rootless daemon (the module's
-own healthcheck script wraps its checks in the same incantation; adjust the socket path if you
-set a non-default `docker_socket_path`).
+own healthcheck script wraps its checks in the same incantation).
 
 Confirm every configured runner reaches GitLab with a valid token:
 

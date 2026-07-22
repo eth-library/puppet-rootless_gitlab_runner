@@ -5,9 +5,6 @@ lookup_options:
   rootless_gitlab_runner::runner_tokens:
     convert_to: 'Sensitive'
 rootless_gitlab_runner::concurrent: 1
-rootless_gitlab_runner::check_interval: 0
-rootless_gitlab_runner::connection_max_age: '15m0s'
-rootless_gitlab_runner::shutdown_timeout: 0
 rootless_gitlab_runner::manage_runner_user: false
 rootless_gitlab_runner::manage_rootless_docker: false
 rootless_gitlab_runner::manage_runner_service: false
