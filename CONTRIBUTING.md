@@ -213,8 +213,8 @@ the public class is the only entry point.
 .
 ├── manifests/                    # Puppet classes (the logic)
 │   ├── init.pp                   #   public class: parameters, ordering, containment
-│   ├── apt_repos.pp              #   apt repositories behind manage_apt_repos
-│   ├── packages.pp               #   apt packages from the `packages` list
+│   ├── apt_repos.pp              #   apt sources behind packages.sources.manage
+│   ├── packages.pp               #   apt packages from the packages.install list
 │   ├── user.pp                   #   runner group, user, home
 │   ├── rootless_docker.pp        #   subids + rootless-docker bring-up behind the preflight
 │   ├── config.pp                 #   renders config.toml; secret-store directory
@@ -261,7 +261,7 @@ the public class is the only entry point.
 The module keeps its **dependency surface deliberately small**: built-in Puppet
 resource types wherever possible, plus two Forge modules — `puppetlabs/stdlib`
 (the `assert_private()` guard in the internal classes) and `puppetlabs/apt` (the
-apt sources behind `manage_apt_repos`).
+apt sources behind `packages.sources.manage`).
 
 ### Walkthrough: adding a configuration option
 
@@ -284,8 +284,8 @@ The unit tests are rspec-puppet [\[5\]](#ref-5): each example compiles the class
 a given set of parameters on the supported OS, into a *catalog* (Puppet's resolved
 list of resources) and asserts on it. No host is involved; a test failure means the
 module would have declared the wrong state. The suite covers the parameter guards (the
-fail-loud cases), the resources behind each `manage_*` toggle, and the service
-postures.
+fail-loud cases), the resources behind each `manage` toggle, and the service
+posture.
 
 A few pieces are worth knowing beyond the plain parameter-and-guard examples:
 
@@ -406,7 +406,7 @@ Repository-wide rules; they apply to every commit on every branch.
 
   Scopes track the private classes and templates (`config`, `service`, `self_update`,
   `apt_repos`, `user`, `rootless_docker`), e.g. `feat(config): render allowed_images`,
-  `fix(self_update): quote repo_path in apply script`.
+  `fix(self_update): quote checkout path in apply script`.
 ### Breaking changes
 
 Breaking changes are marked explicitly: append `!` after the type/scope
