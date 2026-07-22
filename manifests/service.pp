@@ -8,7 +8,7 @@ class rootless_gitlab_runner::service {
   # as root would contradict the module's identity — and the service name is
   # the package-defined unit, not configuration.
   if $rootless_gitlab_runner::runner_service['manage'] {
-    $service_name       = 'gitlab-runner'
+    $service_name       = $rootless_gitlab_runner::service_name
     $service_dropin_dir = "/etc/systemd/system/${service_name}.service.d"
 
     file { $service_dropin_dir:

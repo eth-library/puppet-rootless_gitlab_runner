@@ -353,6 +353,11 @@ class rootless_gitlab_runner (
     default => $runner_service['environment'],
   }
 
+  # The runner manager's systemd unit name is the one the gitlab-runner package
+  # defines, not configuration. Derived once and shared by the service class
+  # and the healthcheck so the literal has a single home.
+  $service_name = 'gitlab-runner'
+
   contain rootless_gitlab_runner::apt_repos
   contain rootless_gitlab_runner::packages
   contain rootless_gitlab_runner::user

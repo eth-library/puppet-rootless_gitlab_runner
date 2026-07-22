@@ -54,6 +54,7 @@ class rootless_gitlab_runner::self_update {
         'socket_path'               => $rootless_gitlab_runner::socket_path,
         'control_repository_path'   => $control_repository_path,
         'control_repository_branch' => $standalone['control_repository_branch'],
+        'service_name'              => $rootless_gitlab_runner::service_name,
       }),
     }
 
