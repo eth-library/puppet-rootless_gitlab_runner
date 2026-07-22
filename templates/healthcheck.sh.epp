@@ -4,6 +4,9 @@
       String $control_repository_path,
       String $control_repository_branch,
 | -%>
+<%# The manager-service check below asserts the packaged gitlab-runner systemd
+    unit (systemctl is-active --quiet gitlab-runner): the unit name the
+    gitlab-runner package defines, not a module-derived value. Not rendered. -%>
 #!/usr/bin/env bash
 #
 # Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
