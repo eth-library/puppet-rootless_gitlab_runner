@@ -1,26 +1,26 @@
-<%- | String $runner_user,
+<%- | String $runner_name,
       String $runner_home,
-      String $config_path,
-      Array[String] $service_environment,
-      Optional[Variant[Integer, String]] $service_timeout_stop_sec,
+      String $configuration_file_path,
+      Array[String] $environment,
+      Optional[Variant[Integer, String]] $timeout_stop_sec,
 | -%>
 # Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
 # is overwritten on the next apply.
 [Service]
-User=<%= $runner_user %>
+User=<%= $runner_name %>
 # The packaged unit passes --user to gitlab-runner, which is only accepted
 # when the process runs as root. Reset ExecStart without it so the manager can
 # run privilege-dropped.
 ExecStart=
-ExecStart=/usr/bin/gitlab-runner run --working-directory <%= $runner_home %> --config <%= $config_path %> --service gitlab-runner
+ExecStart=/usr/bin/gitlab-runner run --working-directory <%= $runner_home %> --config <%= $configuration_file_path %> --service gitlab-runner
 # Graceful shutdown: SIGQUIT lets GitLab Runner finish running jobs before
 # exiting, so a legitimate restart drains instead of aborting builds (systemd's
 # default SIGTERM aborts them).
 KillSignal=SIGQUIT
-<%- if $service_timeout_stop_sec =~ NotUndef { -%>
+<%- if $timeout_stop_sec =~ NotUndef { -%>
 # How long systemd waits for the graceful drain before escalating to SIGKILL.
-TimeoutStopSec=<%= $service_timeout_stop_sec %>
+TimeoutStopSec=<%= $timeout_stop_sec %>
 <%- } -%>
-<%- $service_environment.each |$e| { -%>
+<%- $environment.each |$e| { -%>
 Environment=<%= $e %>
 <%- } -%>

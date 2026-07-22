@@ -1,16 +1,17 @@
-# @summary Renders the runner config, the no-detach-netns drop-in and the secret-store directory.
+# @summary Renders the runner configuration, the no-detach-netns drop-in and the secret-store directory.
 # @api private
 class rootless_gitlab_runner::config {
   assert_private()
 
-  $runner_user = $rootless_gitlab_runner::runner_user
-  $runner_home = $rootless_gitlab_runner::runner_home
+  $runner_name = $rootless_gitlab_runner::runner_account['name']
+  $runner_home = $rootless_gitlab_runner::runner_account['home']
+  $configuration_file_path = $rootless_gitlab_runner::configuration_file['path']
 
   $socket_path = $rootless_gitlab_runner::socket_path
   $socket_mount_runners = $rootless_gitlab_runner::effective_runners.filter |$r| { $r['socket_mount'] == true }
 
   if $socket_path =~ Undef and !$socket_mount_runners.empty {
-    fail('rootless_gitlab_runner: a runner sets socket_mount but the socket path is unknown — set runner_uid')
+    fail('rootless_gitlab_runner: a runner sets socket_mount but the socket path is unknown — set runner_account.uid')
   }
 
   # Recognised per-runner keys. An unrecognised key is almost always a typo,
@@ -70,22 +71,23 @@ class rootless_gitlab_runner::config {
     mode   => '0700',
   }
 
-  # Where this module owns the privilege-dropped manager service, own its config
-  # directory too: the gitlab-runner package creates /etc/gitlab-runner as 0700
-  # root:root, which the privilege-dropped manager can neither traverse to reach
-  # its own config.toml nor write to. The privilege-dropped manager both reads
-  # config.toml and *writes* /etc/gitlab-runner/.runner_system_id on startup, so
-  # the directory is root-owned but group-writable by the runner group (0770).
-  # This adds no real exposure: the runner user already owns config.toml (0600),
-  # so it can rewrite its own config regardless of the directory mode, and
+  # Where this module owns the privilege-dropped manager service, own its
+  # configuration directory too: the gitlab-runner package creates
+  # /etc/gitlab-runner as 0700 root:root, which the privilege-dropped manager
+  # can neither traverse to reach its own config.toml nor write to. The
+  # manager both reads config.toml and *writes*
+  # /etc/gitlab-runner/.runner_system_id on startup, so the directory is
+  # root-owned but group-writable by the runner group (0770). This adds no
+  # real exposure: the runner account already owns config.toml (0600), so it
+  # can rewrite its own configuration regardless of the directory mode, and
   # `other` has no access. Managed here (not in service.pp) so it stays in the
-  # same class as the config file that autorequires it as its parent.
-  if $rootless_gitlab_runner::manage_runner_service {
-    $config_dir = dirname($rootless_gitlab_runner::config_path)
+  # same class as the configuration file that autorequires it as its parent.
+  if $rootless_gitlab_runner::runner_service['manage'] {
+    $config_dir = dirname($configuration_file_path)
     file { $config_dir:
       ensure => directory,
       owner  => 'root',
-      group  => $runner_user,
+      group  => $runner_name,
       mode   => '0770',
     }
 
@@ -94,29 +96,29 @@ class rootless_gitlab_runner::config {
     # before this module's privilege-drop drop-in is in effect — so the file is
     # created root-owned 0600, which the privilege-dropped manager then cannot
     # read (it fails loud: "reading from runner system ID file: permission
-    # denied"). Own it as the runner user so the dropped manager can read the
-    # root-created file; the content is the runner's to generate, so manage
+    # denied"). Own it as the runner account so the dropped manager can read
+    # the root-created file; the content is the runner's to generate, so manage
     # existence + ownership only, never the content. Applied before the service
     # restart (config precedes service in the class order), so the first apply
     # converges in one run.
     file { "${config_dir}/.runner_system_id":
       ensure => file,
-      owner  => $runner_user,
-      group  => $runner_user,
+      owner  => $runner_name,
+      group  => $runner_name,
       mode   => '0600',
     }
   }
 
-  # Always managed, no toggle: rendering the runner config is this module's
-  # core purpose (same rubric as the no-detach-netns drop-in). Ownership
-  # derives from the runner user (a differently named runner user gets a
-  # correctly owned file), and the mode is fixed 0600: the content is
+  # Always managed, no toggle: rendering the runner configuration is this
+  # module's core purpose (same rubric as the no-detach-netns drop-in).
+  # Ownership derives from the runner account (a differently named account
+  # gets a correctly owned file), and the mode is fixed 0600: the content is
   # Sensitive because it carries the runner tokens, keeping them out of the
   # compiled catalog, reports/PuppetDB, and --show_diff output.
-  file { $rootless_gitlab_runner::config_path:
+  file { $configuration_file_path:
     ensure  => file,
-    owner   => $runner_user,
-    group   => $runner_user,
+    owner   => $runner_name,
+    group   => $runner_name,
     mode    => '0600',
     content => Sensitive(epp('rootless_gitlab_runner/config.toml.epp', {
       'concurrent'         => $rootless_gitlab_runner::concurrent,
@@ -127,7 +129,7 @@ class rootless_gitlab_runner::config {
 
   # The no-detach-netns drop-in lives deep in the runner user's systemd tree
   # (~/.config/systemd/user/docker.service.d/) — the one place the systemd
-  # user manager reads docker drop-ins, so the path derives from the runner
+  # user manager reads docker drop-ins, so the path derives from the account
   # home rather than being configurable. The rootless-docker bring-up creates
   # ~/.config/systemd/user, but relying on that couples us to the setuptool's
   # side effects — and Puppet's file type never creates parents. Own the whole
@@ -142,8 +144,8 @@ class rootless_gitlab_runner::config {
   $user_config_dir  = dirname($user_systemd_dir)
   file { [$user_config_dir, $user_systemd_dir, $user_units_dir, $dropin_dir]:
     ensure => directory,
-    owner  => $runner_user,
-    group  => $runner_user,
+    owner  => $runner_name,
+    group  => $runner_name,
     mode   => '0755',
   }
 
@@ -152,8 +154,8 @@ class rootless_gitlab_runner::config {
   # DOCKERD_ROOTLESS_ROOTLESSKIT_DETACH_NETNS=false.
   file { $dropin_path:
     ensure  => file,
-    owner   => $runner_user,
-    group   => $runner_user,
+    owner   => $runner_name,
+    group   => $runner_name,
     mode    => '0644',
     source  => 'puppet:///modules/rootless_gitlab_runner/no-detach-netns.conf',
     require => File[$dropin_dir],
@@ -165,11 +167,11 @@ class rootless_gitlab_runner::config {
   # upstream DETACH_NETNS default until an unrelated reboot — the exact failure
   # mode the drop-in exists to prevent. refreshonly, so steady-state applies
   # (drop-in unchanged) neither reload nor restart. Where the daemon is owned
-  # elsewhere (manage_rootless_docker off), restarts stay the operator's call.
-  if $rootless_gitlab_runner::manage_rootless_docker {
+  # elsewhere (rootless_docker.manage off), restarts stay the operator's call.
+  if $rootless_gitlab_runner::rootless_docker['manage'] {
     exec { 'rootless_gitlab_runner docker daemon-reload (no-detach-netns)':
       command     => 'systemctl --user daemon-reload && systemctl --user try-restart docker',
-      user        => $runner_user,
+      user        => $runner_name,
       environment => $rootless_gitlab_runner::runner_user_env,
       path        => ['/usr/bin', '/bin'],
       provider    => 'shell',

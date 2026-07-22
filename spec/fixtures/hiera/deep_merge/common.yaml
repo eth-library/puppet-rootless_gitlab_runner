@@ -1,0 +1,21 @@
+---
+# Shared consumer layer: partial structs only — every unset subkey must come
+# from the module data layer via the deep-merge lookup_options. The plain
+# (unwrapped) token store exercises the convert_to Sensitive rule.
+rootless_gitlab_runner::runner_account:
+  uid: 2000
+rootless_gitlab_runner::rootless_docker:
+  manage: true
+rootless_gitlab_runner::runner_service:
+  manage: true
+  environment:
+    - 'DOCKER_HOST=unix:///run/user/2000/docker.sock'
+    - 'DEBUG=1'
+rootless_gitlab_runner::runner_tokens:
+  runner_a: 'glrt-DEEP-MERGE-TOKEN'
+rootless_gitlab_runner::runners:
+  - name: 'r'
+    url: 'https://gitlab.example.org/'
+    executor: 'docker'
+    image: 'ubuntu:22.04'
+    token_key: 'runner_a'

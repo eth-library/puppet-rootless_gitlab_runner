@@ -42,7 +42,7 @@ describe 'scripts/check_hiera_data.rb' do
       expect(output).to match(/FAIL .*ci-runner\.yaml: 'no_such_module::thing' — class 'no_such_module' is not in the deployed modules/)
       # Declared keys from the same files are not flagged.
       expect(output).not_to match(/FAIL .*'rootless_gitlab_runner::concurrent'/)
-      expect(output).not_to match(/FAIL .*'rootless_gitlab_runner::runner_uid'/)
+      expect(output).not_to match(/FAIL .*'rootless_gitlab_runner::runner_account'/)
     end
 
     it 'passes the same shape without the stray keys, skipping lookup_options and walking eyaml' do
@@ -72,8 +72,11 @@ describe 'scripts/check_hiera_data.rb' do
     it 'emits a non-failing advisory for subkeys under an effective manage: false' do
       output, status = run_check(File.join(CHECK_FIXTURES, 'advisory'), DEMO_MODULES)
       expect(status.exitstatus).to eq(0)
-      expect(output).to match(/advisory \(non-failing\): 'demo::standalone': effective 'manage' is false/)
+      expect(output).to match(/advisory \(non-failing\): 'demo::standalone': effective 'manage' is false, so the module does not enforce resources from these subkeys/)
       expect(output).to match(/self_update.*ci-runner\.yaml/)
+      # The advisory must not call the subkeys inert: shared-input keys
+      # (account identity) are read by every concern regardless of the toggle.
+      expect(output).not_to match(/inert/)
     end
 
     it 'emits no advisory when a higher-priority layer turns manage on' do

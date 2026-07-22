@@ -30,10 +30,13 @@
 # without a `::` are not automatic-parameter-lookup keys and are ignored.
 #
 # Advisory (non-failing): a declared hash-valued parameter can carry a
-# `manage` toggle ("false means hands-off"). Subkeys set under a struct whose
-# effective `manage` resolves to false are recognized but inert; that can be
-# legitimate declared-state documentation of an externally owned concern, so
-# the check reports it as an advisory and a human judges intent. The
+# `manage` toggle ("false means hands-off"). A `manage` that resolves to
+# false means the module does not create or enforce that concern's resources,
+# so subkeys set under it are not enforced — though a module may still read
+# some of them as shared inputs (identity keys other concerns derive from).
+# Setting them can be legitimate declared-state documentation of an
+# externally owned concern, so the check reports an advisory and a human
+# judges intent. The
 # effective `manage` is resolved from the repository's own data layers: the
 # hierarchy levels of the given hiera.yaml that resolve inside the data
 # directory, in hierarchy order, highest-priority `manage` subkey wins (the
@@ -233,16 +236,17 @@ class HieraDataCheck
                      .find { |v| v.is_a?(Hash) && v.key?('manage') }
       next unless managed && managed['manage'] == false
 
-      inert = files.filter_map do |file|
+      unenforced = files.filter_map do |file|
         value = parsed_data[file][key]
         subkeys = value.is_a?(Hash) ? value.keys - ['manage'] : []
         "#{subkeys.sort.join(', ')} (#{file})" unless subkeys.empty?
       end
-      next if inert.empty?
+      next if unenforced.empty?
 
-      "'#{key}': effective 'manage' is false, so these subkeys are set but " \
-        "inert: #{inert.join('; ')} — legitimate as declared-state " \
-        'documentation of an externally owned concern; a human judges intent'
+      "'#{key}': effective 'manage' is false, so the module does not " \
+        "enforce resources from these subkeys: #{unenforced.join('; ')} — " \
+        'the module may still read some of them as shared inputs; legitimate ' \
+        'as declared state of an externally owned concern; a human judges intent'
     end
   end
 

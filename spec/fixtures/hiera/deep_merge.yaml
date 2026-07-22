@@ -1,0 +1,18 @@
+---
+# Hiera config for the deep-merge contract test: a two-layer consumer-shaped
+# hierarchy (node over common) whose data sets only partial struct hashes.
+# The module data layer underneath supplies every unset subkey; the node
+# layer exercises scalar override and the knockout prefix. datadir is
+# relative to this file's directory.
+version: 5
+
+defaults:
+  data_hash: yaml_data
+
+hierarchy:
+  - name: 'Consumer per-node data'
+    path: 'node.yaml'
+    datadir: 'deep_merge'
+  - name: 'Consumer common data'
+    path: 'common.yaml'
+    datadir: 'deep_merge'

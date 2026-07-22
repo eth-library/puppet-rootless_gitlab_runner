@@ -1,7 +1,10 @@
 ---
-# Values shared by every host; per-node files override. `runner_defaults` is
-# merged under every `runners` entry (keys set on the entry win), so per-host
-# runner lists stop repeating url/executor/image.
+# Values shared by every host; per-node files override (struct parameters
+# merge deep, so a node file carries only its deviations).
+
+# ── the runner configuration: config.toml content ──
+# `runner_defaults` is merged under every `runners` entry (keys set on the
+# entry win), so per-host runner lists stop repeating url/executor/image.
 rootless_gitlab_runner::runner_defaults:
   url: 'https://gitlab.example.org/'
   executor: 'docker'

@@ -3,25 +3,27 @@
 class rootless_gitlab_runner::user {
   assert_private()
 
-  if $rootless_gitlab_runner::manage_runner_user {
-    $runner_user = $rootless_gitlab_runner::runner_user
+  $account = $rootless_gitlab_runner::runner_account
 
-    group { $runner_user:
+  if $account['manage'] {
+    $runner_name = $account['name']
+
+    group { $runner_name:
       ensure => present,
       system => true,
     }
 
     # Home internals (.ssh, .config, ...) are never managed; managehome only
     # creates the directory on first apply.
-    user { $runner_user:
+    user { $runner_name:
       ensure     => present,
       system     => true,
-      uid        => $rootless_gitlab_runner::runner_uid,
-      gid        => $runner_user,
-      home       => $rootless_gitlab_runner::runner_home,
+      uid        => $account['uid'],
+      gid        => $runner_name,
+      home       => $account['home'],
       managehome => true,
       shell      => '/bin/bash',
-      require    => Group[$runner_user],
+      require    => Group[$runner_name],
     }
   }
 }

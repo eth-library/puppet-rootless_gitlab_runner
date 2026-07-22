@@ -4,25 +4,10 @@
 # first (see the README). The other toggles bring the host up from zero and keep it converged.
 # Copy to nodes/<hostname>.yaml and adjust. No tokens here; runner tokens live in the
 # off-repository secret store (/etc/gitlab-runner-infra/secrets.yaml, root 0600) and are merged in
-# at apply time via each runner's token_key.
-rootless_gitlab_runner::runner_uid: 2000
-rootless_gitlab_runner::manage_apt_repos: true
-rootless_gitlab_runner::packages:
-  - 'uidmap'
-  - 'dbus-user-session'
-  - 'docker-ce'
-  - 'docker-ce-cli'
-  - 'docker-ce-rootless-extras'
-  - 'containerd.io'
-  - 'gitlab-runner'
-rootless_gitlab_runner::manage_runner_user: true
-rootless_gitlab_runner::manage_rootless_docker: true
-rootless_gitlab_runner::manage_runner_service: true
-# Opt-in: needs the Self-update prerequisites (see the README) provisioned first; never enable
-# on a fleet host.
-rootless_gitlab_runner::manage_standalone_self_update: false
-# Checkout of this wrapper repo on the host (the self-update loop's target).
-rootless_gitlab_runner::repo_path: '/opt/runner-infra'
+# at apply time via each runner's token_key. Struct parameters merge deep with the module
+# defaults, so each hash below carries only its deviations.
+
+# ── the runner configuration: config.toml content ──
 rootless_gitlab_runner::runners:
   - name: 'docker-rootless'
     # Reference into the secret store's tokens hash — not the token itself.
@@ -35,3 +20,38 @@ rootless_gitlab_runner::runners:
     #   socket_mount: true
     #   allowed_images: ['registry.example.org/ci/*']
     #   allowed_pull_policies: ['always']
+
+# ── the runner account (identity read by every concern; manage = create/enforce it) ──
+rootless_gitlab_runner::runner_account:
+  manage: true
+  uid: 2000
+
+# ── packages and where they install from ──
+rootless_gitlab_runner::packages:
+  install:
+    - 'uidmap'
+    - 'dbus-user-session'
+    - 'docker-ce'
+    - 'docker-ce-cli'
+    - 'docker-ce-rootless-extras'
+    - 'containerd.io'
+    - 'gitlab-runner'
+  sources:
+    manage: true
+
+# ── rootless docker runtime ──
+rootless_gitlab_runner::rootless_docker:
+  manage: true
+
+# ── runner manager service ──
+rootless_gitlab_runner::runner_service:
+  manage: true
+
+# ── standalone topology, with the optional self-update loop inside ──
+rootless_gitlab_runner::standalone:
+  manage: true
+  # Checkout of this control repository on the host (the apply target).
+  control_repository_path: '/opt/runner-infra'
+  # The loop stays opt-in: self_update manage true needs the Self-update
+  # prerequisites (see the README) provisioned first; never enable it on a
+  # fleet host.

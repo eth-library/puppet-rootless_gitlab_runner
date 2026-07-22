@@ -1,8 +1,9 @@
 ---
-# Module data layer. Carries the module's own lookup_options — notably the
-# convert_to that wraps the runner-token store in Sensitive on lookup, so a
-# plain-YAML or hiera-eyaml secret store needs no special handling from the
-# consumer. See data/common.yaml.
+# Module data layer: every parameter default (the class signature carries
+# only the types) and the module's lookup_options — the deep-merge rules for
+# the struct parameters, and the convert_to that wraps the runner-token store
+# in Sensitive on lookup, so a plain-YAML or hiera-eyaml secret store needs
+# no special handling from the consumer. See data/common.yaml.
 version: 5
 
 defaults:

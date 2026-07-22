@@ -3,11 +3,12 @@
 # Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
 # is overwritten on the next apply.
 #
-# Applies the control-repo checkout with isolated Puppet state so it never
-# collides with a central Puppet agent. Used by gitlab-runner-apply.service and
-# for manual runs; extra arguments (e.g. --noop) are forwarded to puppet apply.
-# With --detailed-exitcodes the exit status is 0 (no changes), 2 (changes
-# applied) or 4/6 (failures); the service treats 2 as success.
+# Applies the control-repository checkout with isolated Puppet state so it
+# never collides with a central Puppet agent. Used by
+# gitlab-runner-apply.service and for manual runs; extra arguments (e.g.
+# --noop) are forwarded to puppet apply. With --detailed-exitcodes the exit
+# status is 0 (no changes), 2 (changes applied) or 4/6 (failures); the
+# service treats 2 as success.
 set -euo pipefail
 
 if [[ "${EUID}" -ne 0 ]]; then

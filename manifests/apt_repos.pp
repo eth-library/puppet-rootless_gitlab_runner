@@ -1,9 +1,11 @@
-# @summary Adds the apt repositories the `packages` list installs from.
+# @summary Adds the apt repositories the `packages.install` list installs from.
 # @api private
 class rootless_gitlab_runner::apt_repos {
   assert_private()
 
-  if $rootless_gitlab_runner::manage_apt_repos {
+  $sources = $rootless_gitlab_runner::packages['sources']
+
+  if $sources['manage'] {
     include apt
 
     # Fetch each repo's rolling gpgkey endpoint into /etc/apt/keyrings via a
@@ -43,11 +45,11 @@ class rootless_gitlab_runner::apt_repos {
     $apt_keyrings = {
       'docker'        => {
         'keyring' => $docker_keyring,
-        'source'  => $rootless_gitlab_runner::docker_repo_key_source,
+        'source'  => $sources['docker']['key_source'],
       },
       'gitlab-runner' => {
         'keyring' => $gitlab_runner_keyring,
-        'source'  => $rootless_gitlab_runner::gitlab_runner_repo_key_source,
+        'source'  => $sources['gitlab_runner']['key_source'],
       },
     }
 
@@ -85,14 +87,14 @@ class rootless_gitlab_runner::apt_repos {
     # the managed keyring above; requiring the refresh exec makes the fetched
     # key precede the source it signs.
     apt::source { 'docker':
-      location => $rootless_gitlab_runner::docker_repo_location,
+      location => $sources['docker']['location'],
       repos    => 'stable',
       keyring  => $docker_keyring,
       require  => Exec['rootless_gitlab_runner docker keyring refresh'],
     }
 
     apt::source { 'gitlab-runner':
-      location => $rootless_gitlab_runner::gitlab_runner_repo_location,
+      location => $sources['gitlab_runner']['location'],
       repos    => 'main',
       keyring  => $gitlab_runner_keyring,
       require  => Exec['rootless_gitlab_runner gitlab-runner keyring refresh'],

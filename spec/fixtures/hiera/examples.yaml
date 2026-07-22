@@ -1,0 +1,18 @@
+---
+# Hiera config for the examples drift gate: layers the shipped example data
+# (node file over common) exactly as the examples/hiera.yaml hierarchy would,
+# so the suite compiles the real files through automatic parameter lookup and
+# the module's deep-merge lookup_options. datadir is relative to this file's
+# directory.
+version: 5
+
+defaults:
+  data_hash: yaml_data
+
+hierarchy:
+  - name: 'Example per-node data'
+    path: 'nodes/host.example.yaml'
+    datadir: '../../../examples/data'
+  - name: 'Example common defaults'
+    path: 'common.yaml'
+    datadir: '../../../examples/data'
