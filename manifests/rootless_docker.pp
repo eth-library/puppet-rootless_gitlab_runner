@@ -8,8 +8,11 @@ class rootless_gitlab_runner::rootless_docker {
     $runner_home = $rootless_gitlab_runner::runner_home
     $runner_uid  = $rootless_gitlab_runner::runner_uid
     $runtime_dir = $rootless_gitlab_runner::runtime_dir
-    $setuptool   = $rootless_gitlab_runner::setuptool_path
     $user_env    = $rootless_gitlab_runner::runner_user_env
+    # The setuptool ships at the path the docker-ce-rootless-extras package
+    # defines; if it is absent the install exec below fails loud (a missing
+    # command is a command failure, not a guard failure).
+    $setuptool   = '/usr/bin/dockerd-rootless-setuptool.sh'
 
     # A fresh docker-ce install leaves the rootful system daemon running: the
     # package postinst starts docker.service + docker.socket as root, and

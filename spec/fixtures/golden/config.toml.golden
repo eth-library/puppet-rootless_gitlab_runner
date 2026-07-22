@@ -1,9 +1,6 @@
 # Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file is
 # overwritten on the next apply.
 concurrent = 1
-check_interval = 0
-connection_max_age = "15m0s"
-shutdown_timeout = 0
 
 [[runners]]
   name = "socket-runner"

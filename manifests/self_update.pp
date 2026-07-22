@@ -6,6 +6,7 @@ class rootless_gitlab_runner::self_update {
   if $rootless_gitlab_runner::manage_standalone_self_update {
     $apply_script       = '/usr/local/sbin/rootless-gitlab-runner-apply'
     $healthcheck_script = '/usr/local/sbin/rootless-gitlab-runner-healthcheck'
+    $repo_path          = $rootless_gitlab_runner::repo_path
 
     # This class's own reload point; refreshonly. Deliberately separate from
     # service.pp's exec: sharing one would order it both before the runner
@@ -17,16 +18,19 @@ class rootless_gitlab_runner::self_update {
       refreshonly => true,
     }
 
+    # The manifest, module directory and Hiera configuration derive strictly
+    # from the documented control-repository layout — the layout is the
+    # contract, not a parameter.
     file { $apply_script:
       ensure  => file,
       owner   => 'root',
       group   => 'root',
       mode    => '0755',
       content => epp('rootless_gitlab_runner/apply.sh.epp', {
-        'repo_path'     => $rootless_gitlab_runner::repo_path,
-        'manifest_path' => $rootless_gitlab_runner::real_manifest_path,
-        'module_dir'    => $rootless_gitlab_runner::real_module_dir,
-        'hiera_config'  => $rootless_gitlab_runner::real_hiera_config,
+        'repo_path'     => $repo_path,
+        'manifest_path' => "${repo_path}/puppet/manifests/site.pp",
+        'module_dir'    => "${repo_path}/puppet/modules",
+        'hiera_config'  => "${repo_path}/puppet/hiera.yaml",
         'confdir'       => $rootless_gitlab_runner::apply_confdir,
         'vardir'        => $rootless_gitlab_runner::apply_vardir,
       }),
@@ -38,12 +42,11 @@ class rootless_gitlab_runner::self_update {
       group   => 'root',
       mode    => '0755',
       content => epp('rootless_gitlab_runner/healthcheck.sh.epp', {
-        'service_name' => $rootless_gitlab_runner::service_name,
-        'runner_user'  => $rootless_gitlab_runner::runner_user,
-        'runtime_dir'  => $rootless_gitlab_runner::runtime_dir,
-        'socket_path'  => $rootless_gitlab_runner::socket_path,
-        'repo_path'    => $rootless_gitlab_runner::repo_path,
-        'repo_branch'  => $rootless_gitlab_runner::repo_branch,
+        'runner_user' => $rootless_gitlab_runner::runner_user,
+        'runtime_dir' => $rootless_gitlab_runner::runtime_dir,
+        'socket_path' => $rootless_gitlab_runner::socket_path,
+        'repo_path'   => $repo_path,
+        'repo_branch' => $rootless_gitlab_runner::repo_branch,
       }),
     }
 
@@ -53,12 +56,11 @@ class rootless_gitlab_runner::self_update {
       group   => 'root',
       mode    => '0644',
       content => epp('rootless_gitlab_runner/apply.service.epp', {
-        'apply_script'    => $apply_script,
-        'repo_path'       => $rootless_gitlab_runner::repo_path,
-        'repo_branch'     => $rootless_gitlab_runner::repo_branch,
-        'apply_timeout'   => $rootless_gitlab_runner::apply_timeout,
-        'puppet_bindir'   => $rootless_gitlab_runner::puppet_bindir,
-        'on_failure_unit' => $rootless_gitlab_runner::on_failure_unit,
+        'apply_script'  => $apply_script,
+        'repo_path'     => $repo_path,
+        'repo_branch'   => $rootless_gitlab_runner::repo_branch,
+        'apply_timeout' => $rootless_gitlab_runner::apply_timeout,
+        'puppet_bindir' => $rootless_gitlab_runner::puppet_bindir,
       }),
       notify  => Exec['rootless_gitlab_runner daemon-reload (self-update)'],
     }
@@ -81,7 +83,6 @@ class rootless_gitlab_runner::self_update {
       mode    => '0644',
       content => epp('rootless_gitlab_runner/healthcheck.service.epp', {
         'healthcheck_script' => $healthcheck_script,
-        'on_failure_unit'    => $rootless_gitlab_runner::on_failure_unit,
       }),
       notify  => Exec['rootless_gitlab_runner daemon-reload (self-update)'],
     }

@@ -80,23 +80,13 @@ class { 'rootless_gitlab_runner':
 The following parameters are available in the `rootless_gitlab_runner` class:
 
 * [`concurrent`](#-rootless_gitlab_runner--concurrent)
-* [`check_interval`](#-rootless_gitlab_runner--check_interval)
-* [`connection_max_age`](#-rootless_gitlab_runner--connection_max_age)
-* [`shutdown_timeout`](#-rootless_gitlab_runner--shutdown_timeout)
 * [`runners`](#-rootless_gitlab_runner--runners)
 * [`runner_defaults`](#-rootless_gitlab_runner--runner_defaults)
 * [`runner_tokens`](#-rootless_gitlab_runner--runner_tokens)
 * [`runner_user`](#-rootless_gitlab_runner--runner_user)
 * [`runner_uid`](#-rootless_gitlab_runner--runner_uid)
 * [`runner_home`](#-rootless_gitlab_runner--runner_home)
-* [`runner_binary`](#-rootless_gitlab_runner--runner_binary)
-* [`docker_socket_path`](#-rootless_gitlab_runner--docker_socket_path)
 * [`config_path`](#-rootless_gitlab_runner--config_path)
-* [`config_owner`](#-rootless_gitlab_runner--config_owner)
-* [`config_group`](#-rootless_gitlab_runner--config_group)
-* [`config_mode`](#-rootless_gitlab_runner--config_mode)
-* [`dropin_path`](#-rootless_gitlab_runner--dropin_path)
-* [`dropin_mode`](#-rootless_gitlab_runner--dropin_mode)
 * [`secret_store_path`](#-rootless_gitlab_runner--secret_store_path)
 * [`packages`](#-rootless_gitlab_runner--packages)
 * [`manage_apt_repos`](#-rootless_gitlab_runner--manage_apt_repos)
@@ -108,20 +98,12 @@ The following parameters are available in the `rootless_gitlab_runner` class:
 * [`subid_start`](#-rootless_gitlab_runner--subid_start)
 * [`subid_count`](#-rootless_gitlab_runner--subid_count)
 * [`manage_rootless_docker`](#-rootless_gitlab_runner--manage_rootless_docker)
-* [`setuptool_path`](#-rootless_gitlab_runner--setuptool_path)
 * [`manage_runner_service`](#-rootless_gitlab_runner--manage_runner_service)
-* [`service_name`](#-rootless_gitlab_runner--service_name)
-* [`service_user`](#-rootless_gitlab_runner--service_user)
 * [`service_environment`](#-rootless_gitlab_runner--service_environment)
-* [`service_kill_signal`](#-rootless_gitlab_runner--service_kill_signal)
 * [`service_timeout_stop_sec`](#-rootless_gitlab_runner--service_timeout_stop_sec)
-* [`on_failure_unit`](#-rootless_gitlab_runner--on_failure_unit)
 * [`manage_standalone_self_update`](#-rootless_gitlab_runner--manage_standalone_self_update)
 * [`repo_path`](#-rootless_gitlab_runner--repo_path)
 * [`repo_branch`](#-rootless_gitlab_runner--repo_branch)
-* [`manifest_path`](#-rootless_gitlab_runner--manifest_path)
-* [`module_dir`](#-rootless_gitlab_runner--module_dir)
-* [`hiera_config`](#-rootless_gitlab_runner--hiera_config)
 * [`apply_confdir`](#-rootless_gitlab_runner--apply_confdir)
 * [`apply_vardir`](#-rootless_gitlab_runner--apply_vardir)
 * [`apply_interval`](#-rootless_gitlab_runner--apply_interval)
@@ -136,30 +118,6 @@ Data type: `Integer[1]`
 Global `concurrent` value written to the runner config.
 
 Default value: `1`
-
-##### <a name="-rootless_gitlab_runner--check_interval"></a>`check_interval`
-
-Data type: `Integer[0]`
-
-Global `check_interval` value written to the runner config.
-
-Default value: `0`
-
-##### <a name="-rootless_gitlab_runner--connection_max_age"></a>`connection_max_age`
-
-Data type: `String[1]`
-
-Global `connection_max_age` value written to the runner config.
-
-Default value: `'15m0s'`
-
-##### <a name="-rootless_gitlab_runner--shutdown_timeout"></a>`shutdown_timeout`
-
-Data type: `Integer[0]`
-
-Global `shutdown_timeout` value written to the runner config.
-
-Default value: `0`
 
 ##### <a name="-rootless_gitlab_runner--runners"></a>`runners`
 
@@ -221,11 +179,11 @@ Data type: `Optional[Integer[1]]`
 
 Numeric uid of the runner user. No default: the uid is host data, not
 something a module can sensibly invent. It derives the rootless runtime
-paths (`/run/user/<uid>`) and is enforced on the user when
-`manage_runner_user` is on; the apply fails loud when it is unset but
+paths (`/run/user/<uid>`, the docker socket) and is enforced on the user
+when `manage_runner_user` is on; the apply fails loud when it is unset but
 needed — with `manage_runner_user`, `manage_rootless_docker` or
-`manage_standalone_self_update` on, or to derive the docker socket path for
-a `socket_mount` runner that sets no explicit `docker_socket_path`.
+`manage_standalone_self_update` on, or to derive the docker socket path
+for a `socket_mount` runner.
 
 Default value: `undef`
 
@@ -237,74 +195,15 @@ Home directory of the runner user.
 
 Default value: `'/home/gitlab-runner'`
 
-##### <a name="-rootless_gitlab_runner--runner_binary"></a>`runner_binary`
-
-Data type: `Stdlib::Absolutepath`
-
-Absolute path of the gitlab-runner binary (used in the service drop-in's
-ExecStart override).
-
-Default value: `'/usr/bin/gitlab-runner'`
-
-##### <a name="-rootless_gitlab_runner--docker_socket_path"></a>`docker_socket_path`
-
-Data type: `Optional[Stdlib::Absolutepath]`
-
-Filesystem path of the rootless docker socket. Derived from `runner_uid`
-(`/run/user/<uid>/docker.sock`) when unset; bind-mounted into jobs for
-runners that set `socket_mount => true` and used as the default
-`DOCKER_HOST` target.
-
-Default value: `undef`
-
 ##### <a name="-rootless_gitlab_runner--config_path"></a>`config_path`
 
 Data type: `Stdlib::Absolutepath`
 
-Path of the rendered runner config file.
+Path of the rendered runner config file. Owner and group derive from
+`runner_user`; the mode is fixed 0600 (the file carries the runner
+tokens).
 
 Default value: `'/etc/gitlab-runner/config.toml'`
-
-##### <a name="-rootless_gitlab_runner--config_owner"></a>`config_owner`
-
-Data type: `String[1]`
-
-Owner of the rendered runner config file.
-
-Default value: `'gitlab-runner'`
-
-##### <a name="-rootless_gitlab_runner--config_group"></a>`config_group`
-
-Data type: `String[1]`
-
-Group of the rendered runner config file.
-
-Default value: `'gitlab-runner'`
-
-##### <a name="-rootless_gitlab_runner--config_mode"></a>`config_mode`
-
-Data type: `Stdlib::Filemode`
-
-Mode of the rendered runner config file.
-
-Default value: `'0600'`
-
-##### <a name="-rootless_gitlab_runner--dropin_path"></a>`dropin_path`
-
-Data type: `Stdlib::Absolutepath`
-
-Absolute path of the no-detach-netns drop-in (inside the runner user
-home). Derived from `runner_home` by default.
-
-Default value: `"${runner_home}/.config/systemd/user/docker.service.d/no-detach-netns.conf"`
-
-##### <a name="-rootless_gitlab_runner--dropin_mode"></a>`dropin_mode`
-
-Data type: `Stdlib::Filemode`
-
-Mode of the no-detach-netns drop-in.
-
-Default value: `'0644'`
 
 ##### <a name="-rootless_gitlab_runner--secret_store_path"></a>`secret_store_path`
 
@@ -418,42 +317,16 @@ limits are silently unenforced — see the README Limitations. Default false.
 
 Default value: `false`
 
-##### <a name="-rootless_gitlab_runner--setuptool_path"></a>`setuptool_path`
-
-Data type: `Stdlib::Absolutepath`
-
-Absolute path of dockerd-rootless-setuptool.sh (ships with
-docker-ce-rootless-extras).
-
-Default value: `'/usr/bin/dockerd-rootless-setuptool.sh'`
-
 ##### <a name="-rootless_gitlab_runner--manage_runner_service"></a>`manage_runner_service`
 
 Data type: `Boolean`
 
 Whether to manage the runner system service, its privilege-drop systemd
 drop-in, and the config directory's mode so a privilege-dropped manager can
-traverse to its config. Default false.
+traverse to its config. The manager always runs privilege-dropped as
+`runner_user`. Default false.
 
 Default value: `false`
-
-##### <a name="-rootless_gitlab_runner--service_name"></a>`service_name`
-
-Data type: `String[1]`
-
-Name of the runner system service.
-
-Default value: `'gitlab-runner'`
-
-##### <a name="-rootless_gitlab_runner--service_user"></a>`service_user`
-
-Data type: `String[1]`
-
-User the runner manager service runs as, rendered into the service
-drop-in. Defaults to the runner user (privilege-dropped manager); set to
-'root' to keep the packaged root-running unit unchanged.
-
-Default value: `'gitlab-runner'`
 
 ##### <a name="-rootless_gitlab_runner--service_environment"></a>`service_environment`
 
@@ -466,18 +339,6 @@ cannot inject an extra systemd directive into the drop-in.
 
 Default value: `undef`
 
-##### <a name="-rootless_gitlab_runner--service_kill_signal"></a>`service_kill_signal`
-
-Data type: `Optional[String[1]]`
-
-`KillSignal=` written into the manager service drop-in. Defaults to
-`SIGQUIT`, which GitLab Runner treats as a graceful shutdown (stop taking
-new jobs, let running ones finish) — so a legitimate restart drains instead
-of aborting builds, which systemd's default `SIGTERM` would do. Set it to
-`SIGTERM` to keep systemd's default abort-on-stop behavior.
-
-Default value: `'SIGQUIT'`
-
 ##### <a name="-rootless_gitlab_runner--service_timeout_stop_sec"></a>`service_timeout_stop_sec`
 
 Data type: `Optional[Variant[Integer[0], String[1]]]`
@@ -487,17 +348,6 @@ systemd waits for a graceful drain before escalating to `SIGKILL`. Unset by
 default, so systemd's `DefaultTimeoutStopSec` (typically 90s) applies; set
 it to the longest job a drain should wait for (GitLab's documented example
 is `7200`). Accepts a seconds integer or a systemd time span (e.g. `2h`).
-
-Default value: `undef`
-
-##### <a name="-rootless_gitlab_runner--on_failure_unit"></a>`on_failure_unit`
-
-Data type: `Optional[String[1]]`
-
-Optional systemd unit activated via `OnFailure=` on the self-update apply
-and healthcheck services, so a failed tick can trigger an alerting unit
-(e.g. `notify-failure@%n.service`). Unset by default (no `OnFailure=`);
-systemd accepts a space-separated list of units.
 
 Default value: `undef`
 
@@ -520,7 +370,9 @@ Default value: `false`
 Data type: `Stdlib::Absolutepath`
 
 Root-owned checkout of the control repository the self-update loop
-applies.
+applies. The apply's manifest, module directory and Hiera configuration
+derive strictly from the documented layout beneath it
+(`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml`).
 
 Default value: `'/opt/gitlab-runner-infra'`
 
@@ -531,33 +383,6 @@ Data type: `String[1]`
 Branch the self-update loop follows (protected, signed).
 
 Default value: `'main'`
-
-##### <a name="-rootless_gitlab_runner--manifest_path"></a>`manifest_path`
-
-Data type: `Optional[Stdlib::Absolutepath]`
-
-Manifest passed to puppet apply. Defaults to
-`<repo_path>/puppet/manifests/site.pp`.
-
-Default value: `undef`
-
-##### <a name="-rootless_gitlab_runner--module_dir"></a>`module_dir`
-
-Data type: `Optional[Stdlib::Absolutepath]`
-
-Module directory used as --modulepath and as r10k's --moduledir. Defaults
-to `<repo_path>/puppet/modules`.
-
-Default value: `undef`
-
-##### <a name="-rootless_gitlab_runner--hiera_config"></a>`hiera_config`
-
-Data type: `Optional[Stdlib::Absolutepath]`
-
-Hiera configuration passed to puppet apply. Defaults to
-`<repo_path>/puppet/hiera.yaml`.
-
-Default value: `undef`
 
 ##### <a name="-rootless_gitlab_runner--apply_confdir"></a>`apply_confdir`
 
