@@ -40,12 +40,6 @@
 #
 # @param concurrent
 #   Global `concurrent` value written to the runner config.
-# @param check_interval
-#   Global `check_interval` value written to the runner config.
-# @param connection_max_age
-#   Global `connection_max_age` value written to the runner config.
-# @param shutdown_timeout
-#   Global `shutdown_timeout` value written to the runner config.
 # @param runners
 #   Ordered list of runner definitions. Each entry is a hash; recognised keys:
 #   `name`, `url`, `id` (Integer), `executor`, `token_key`, `host`, `image`,
@@ -79,34 +73,17 @@
 # @param runner_uid
 #   Numeric uid of the runner user. No default: the uid is host data, not
 #   something a module can sensibly invent. It derives the rootless runtime
-#   paths (`/run/user/<uid>`) and is enforced on the user when
-#   `manage_runner_user` is on; the apply fails loud when it is unset but
+#   paths (`/run/user/<uid>`, the docker socket) and is enforced on the user
+#   when `manage_runner_user` is on; the apply fails loud when it is unset but
 #   needed — with `manage_runner_user`, `manage_rootless_docker` or
-#   `manage_standalone_self_update` on, or to derive the docker socket path for
-#   a `socket_mount` runner that sets no explicit `docker_socket_path`.
+#   `manage_standalone_self_update` on, or to derive the docker socket path
+#   for a `socket_mount` runner.
 # @param runner_home
 #   Home directory of the runner user.
-# @param runner_binary
-#   Absolute path of the gitlab-runner binary (used in the service drop-in's
-#   ExecStart override).
-# @param docker_socket_path
-#   Filesystem path of the rootless docker socket. Derived from `runner_uid`
-#   (`/run/user/<uid>/docker.sock`) when unset; bind-mounted into jobs for
-#   runners that set `socket_mount => true` and used as the default
-#   `DOCKER_HOST` target.
 # @param config_path
-#   Path of the rendered runner config file.
-# @param config_owner
-#   Owner of the rendered runner config file.
-# @param config_group
-#   Group of the rendered runner config file.
-# @param config_mode
-#   Mode of the rendered runner config file.
-# @param dropin_path
-#   Absolute path of the no-detach-netns drop-in (inside the runner user
-#   home). Derived from `runner_home` by default.
-# @param dropin_mode
-#   Mode of the no-detach-netns drop-in.
+#   Path of the rendered runner config file. Owner and group derive from
+#   `runner_user`; the mode is fixed 0600 (the file carries the runner
+#   tokens).
 # @param secret_store_path
 #   Directory of the off-repo secret store. The directory itself is managed
 #   (root-owned, 0700); the secret file inside it is host-provisioned and
@@ -153,41 +130,22 @@
 #   cgroup-v2 controller delegation is deliberately not managed
 #   (it would be the module's only system-wide write); without it CPU/IO job
 #   limits are silently unenforced — see the README Limitations. Default false.
-# @param setuptool_path
-#   Absolute path of dockerd-rootless-setuptool.sh (ships with
-#   docker-ce-rootless-extras).
 # @param manage_runner_service
 #   Whether to manage the runner system service, its privilege-drop systemd
 #   drop-in, and the config directory's mode so a privilege-dropped manager can
-#   traverse to its config. Default false.
-# @param service_name
-#   Name of the runner system service.
-# @param service_user
-#   User the runner manager service runs as, rendered into the service
-#   drop-in. Defaults to the runner user (privilege-dropped manager); set to
-#   'root' to keep the packaged root-running unit unchanged.
+#   traverse to its config. The manager always runs privilege-dropped as
+#   `runner_user`. Default false.
 # @param service_environment
 #   Environment lines (KEY=value) rendered into the service drop-in. When
 #   unset, defaults to pointing DOCKER_HOST at the rootless docker socket. Each
 #   line must be a single line — a value containing a newline is rejected, so it
 #   cannot inject an extra systemd directive into the drop-in.
-# @param service_kill_signal
-#   `KillSignal=` written into the manager service drop-in. Defaults to
-#   `SIGQUIT`, which GitLab Runner treats as a graceful shutdown (stop taking
-#   new jobs, let running ones finish) — so a legitimate restart drains instead
-#   of aborting builds, which systemd's default `SIGTERM` would do. Set it to
-#   `SIGTERM` to keep systemd's default abort-on-stop behavior.
 # @param service_timeout_stop_sec
 #   `TimeoutStopSec=` written into the manager service drop-in — how long
 #   systemd waits for a graceful drain before escalating to `SIGKILL`. Unset by
 #   default, so systemd's `DefaultTimeoutStopSec` (typically 90s) applies; set
 #   it to the longest job a drain should wait for (GitLab's documented example
 #   is `7200`). Accepts a seconds integer or a systemd time span (e.g. `2h`).
-# @param on_failure_unit
-#   Optional systemd unit activated via `OnFailure=` on the self-update apply
-#   and healthcheck services, so a failed tick can trigger an alerting unit
-#   (e.g. `notify-failure@%n.service`). Unset by default (no `OnFailure=`);
-#   systemd accepts a space-separated list of units.
 # @param manage_standalone_self_update
 #   Whether to install the standalone self-update loop: an apply script, a
 #   oneshot service + timer that fetch the control repo, verify the commit
@@ -198,18 +156,11 @@
 #   false.
 # @param repo_path
 #   Root-owned checkout of the control repository the self-update loop
-#   applies.
+#   applies. The apply's manifest, module directory and Hiera configuration
+#   derive strictly from the documented layout beneath it
+#   (`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml`).
 # @param repo_branch
 #   Branch the self-update loop follows (protected, signed).
-# @param manifest_path
-#   Manifest passed to puppet apply. Defaults to
-#   `<repo_path>/puppet/manifests/site.pp`.
-# @param module_dir
-#   Module directory used as --modulepath and as r10k's --moduledir. Defaults
-#   to `<repo_path>/puppet/modules`.
-# @param hiera_config
-#   Hiera configuration passed to puppet apply. Defaults to
-#   `<repo_path>/puppet/hiera.yaml`.
 # @param apply_confdir
 #   Isolated Puppet confdir for the apply (never the central agent's).
 # @param apply_vardir
@@ -227,23 +178,13 @@
 #   systemd time span between healthcheck runs.
 class rootless_gitlab_runner (
   Integer[1]               $concurrent             = 1,
-  Integer[0]               $check_interval         = 0,
-  String[1]                $connection_max_age     = '15m0s',
-  Integer[0]               $shutdown_timeout       = 0,
   Array[Hash]              $runners                = [],
   Hash                     $runner_defaults        = {},
   Sensitive[Hash[String, String]] $runner_tokens   = Sensitive({}),
   Rootless_gitlab_runner::Username $runner_user    = 'gitlab-runner',
   Optional[Integer[1]]     $runner_uid             = undef,
   Stdlib::Absolutepath     $runner_home            = '/home/gitlab-runner',
-  Stdlib::Absolutepath     $runner_binary          = '/usr/bin/gitlab-runner',
-  Optional[Stdlib::Absolutepath] $docker_socket_path = undef,
   Stdlib::Absolutepath     $config_path            = '/etc/gitlab-runner/config.toml',
-  String[1]                $config_owner           = 'gitlab-runner',
-  String[1]                $config_group           = 'gitlab-runner',
-  Stdlib::Filemode         $config_mode            = '0600',
-  Stdlib::Absolutepath     $dropin_path            = "${runner_home}/.config/systemd/user/docker.service.d/no-detach-netns.conf",
-  Stdlib::Filemode         $dropin_mode            = '0644',
   Stdlib::Absolutepath     $secret_store_path      = '/etc/gitlab-runner-infra',
   Array[String[1]]         $packages               = [],
   Boolean                  $manage_apt_repos       = false,
@@ -255,20 +196,12 @@ class rootless_gitlab_runner (
   Integer[1]               $subid_start            = 231072,
   Integer[65536]           $subid_count            = 165536,
   Boolean                  $manage_rootless_docker = false,
-  Stdlib::Absolutepath     $setuptool_path         = '/usr/bin/dockerd-rootless-setuptool.sh',
   Boolean                  $manage_runner_service  = false,
-  String[1]                $service_name           = 'gitlab-runner',
-  String[1]                $service_user           = 'gitlab-runner',
   Optional[Array[Pattern[/\A[^\r\n]+\z/]]] $service_environment = undef,
-  Optional[String[1]]      $service_kill_signal    = 'SIGQUIT',
   Optional[Variant[Integer[0], String[1]]] $service_timeout_stop_sec = undef,
-  Optional[String[1]]      $on_failure_unit        = undef,
   Boolean                  $manage_standalone_self_update = false,
   Stdlib::Absolutepath     $repo_path              = '/opt/gitlab-runner-infra',
   String[1]                $repo_branch            = 'main',
-  Optional[Stdlib::Absolutepath] $manifest_path    = undef,
-  Optional[Stdlib::Absolutepath] $module_dir       = undef,
-  Optional[Stdlib::Absolutepath] $hiera_config     = undef,
   Stdlib::Absolutepath     $apply_confdir          = '/etc/gitlab-runner-infra/puppet',
   Stdlib::Absolutepath     $apply_vardir           = '/var/lib/grunner-puppet',
   String[1]                $apply_interval         = '5min',
@@ -290,16 +223,16 @@ class rootless_gitlab_runner (
   # Defaults merged under every runner entry; keys set on the entry win.
   $effective_runners = $runners.map |$r| { $runner_defaults + $r }
 
-  # Rootless runtime paths derived from the uid where known.
+  # Rootless runtime paths derived from the uid where known: the module
+  # itself installs the daemon socket at /run/user/<uid>/docker.sock, so the
+  # path is derivation, not configuration. An exotic external socket is
+  # expressible via service_environment.
   if $runner_uid =~ Integer {
     $runtime_dir = "/run/user/${runner_uid}"
-    $socket_path = $docker_socket_path ? {
-      undef   => "${runtime_dir}/docker.sock",
-      default => $docker_socket_path,
-    }
+    $socket_path = "${runtime_dir}/docker.sock"
   } else {
     $runtime_dir = undef
-    $socket_path = $docker_socket_path
+    $socket_path = undef
   }
 
   # Environment contract for every exec run as the runner user: non-interactive
@@ -312,10 +245,10 @@ class rootless_gitlab_runner (
     "DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime_dir}/bus",
   ]
 
-  if $manage_runner_service and $service_user != 'root' and $socket_path =~ Undef and $service_environment =~ Undef {
+  if $manage_runner_service and $socket_path =~ Undef and $service_environment =~ Undef {
     fail(join([
-      'rootless_gitlab_runner: a privilege-dropped runner service needs DOCKER_HOST — ',
-      'set runner_uid, docker_socket_path or service_environment',
+      'rootless_gitlab_runner: the privilege-dropped runner service needs DOCKER_HOST — ',
+      'set runner_uid or service_environment',
     ]))
   }
 
@@ -326,13 +259,6 @@ class rootless_gitlab_runner (
     },
     default => $service_environment,
   }
-
-  # Self-update paths default into the control-repo checkout. Plain selectors,
-  # not stdlib pick(): pick() also discards an explicit empty string, whereas
-  # only an unset (undef) value should fall back to the derived default.
-  $real_manifest_path = $manifest_path ? { undef => "${repo_path}/puppet/manifests/site.pp", default => $manifest_path }
-  $real_module_dir    = $module_dir ? { undef => "${repo_path}/puppet/modules", default => $module_dir }
-  $real_hiera_config  = $hiera_config ? { undef => "${repo_path}/puppet/hiera.yaml", default => $hiera_config }
 
   contain rootless_gitlab_runner::apt_repos
   contain rootless_gitlab_runner::packages

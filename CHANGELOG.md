@@ -17,6 +17,13 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Freshly provisioned hosts now get a 165536-wide subordinate-ID range, which satisfies the ID-mapping requirement of nested rootless BuildKit builds.
 - Subordinate UID/GID ranges are now provisioned by `manage_rootless_docker`, together with the other rootless-Docker prerequisites, instead of by `manage_runner_user`: rootless Docker can now be brought up on a host whose runner user is owned by another system. An existing range entry is never overwritten, and `manage_runner_user` keeps owning the group, user, and home.
 
+### Removed
+
+- Every parameter the module can derive is now automatic: the rendered configuration's owner and group follow `runner_user` (which also fixes the file staying owned by the default account name when a different runner user is declared), the docker socket path follows `runner_uid`, the no-detach-netns drop-in location follows `runner_home`, and the apply's manifest, module directory and Hiera configuration follow the documented control-repository layout under `repo_path`. `service_user` goes with them: the runner manager service always runs privilege-dropped as the runner user.
+- Deliberate choices are no longer parameters: `runner_binary`, `service_name` and `setuptool_path` take the values their packages define, `service_kill_signal` is always `SIGQUIT` (the graceful drain), and `config_mode` and `dropin_mode` keep their former defaults.
+- `check_interval`, `connection_max_age` and `shutdown_timeout` are no longer rendered. The removed lines matched GitLab Runner's own defaults, so existing hosts behave the same.
+- `on_failure_unit` is removed; a push alert attaches as a host-side `OnFailure=` drop-in on the apply or healthcheck service.
+
 ### Fixed
 
 - With `manage_apt_repos` on, repeated applies stop churning apt: an unchanged repository signing key is now a true no-op (no keyring rewrite, no needless `apt-get update`), while a genuine key rotation is still picked up from the vendor's rolling key endpoint and refreshes the apt index.

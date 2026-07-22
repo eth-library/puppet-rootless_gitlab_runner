@@ -3,10 +3,12 @@
 class rootless_gitlab_runner::service {
   assert_private()
 
-  # One owner for the manager service and its privilege-drop drop-in; the
-  # privilege posture is data (service_user, service_environment).
+  # One owner for the manager service and its privilege-drop drop-in. The
+  # manager always runs privilege-dropped as the runner user — running it as
+  # root would contradict the module's identity — and the service name is the
+  # package-defined unit, not configuration.
   if $rootless_gitlab_runner::manage_runner_service {
-    $service_name       = $rootless_gitlab_runner::service_name
+    $service_name       = 'gitlab-runner'
     $service_dropin_dir = "/etc/systemd/system/${service_name}.service.d"
 
     file { $service_dropin_dir:
@@ -32,13 +34,10 @@ class rootless_gitlab_runner::service {
       group   => 'root',
       mode    => '0644',
       content => epp('rootless_gitlab_runner/service-dropin.conf.epp', {
-        'service_user'             => $rootless_gitlab_runner::service_user,
-        'service_environment'      => $rootless_gitlab_runner::real_service_environment,
-        'runner_binary'            => $rootless_gitlab_runner::runner_binary,
+        'runner_user'              => $rootless_gitlab_runner::runner_user,
         'runner_home'              => $rootless_gitlab_runner::runner_home,
         'config_path'              => $rootless_gitlab_runner::config_path,
-        'service_name'             => $service_name,
-        'service_kill_signal'      => $rootless_gitlab_runner::service_kill_signal,
+        'service_environment'      => $rootless_gitlab_runner::real_service_environment,
         'service_timeout_stop_sec' => $rootless_gitlab_runner::service_timeout_stop_sec,
       }),
       require => File[$service_dropin_dir],
