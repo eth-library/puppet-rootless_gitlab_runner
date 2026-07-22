@@ -358,6 +358,16 @@ class rootless_gitlab_runner (
   # and the healthcheck so the literal has a single home.
   $service_name = 'gitlab-runner'
 
+  # The runner account's systemd user unit directory (~/.config/systemd/user)
+  # and its parents, built bottom-up from the home so each directory is its
+  # parent plus one path element (no dirname() walk back up). Puppet's file
+  # type never creates parents, so config.pp manages the whole chain to place
+  # the no-detach-netns drop-in; rootless_docker.pp reads $user_systemd_dir for
+  # the docker.service the setuptool generates there.
+  $user_config_dir         = "${runner_account['home']}/.config"
+  $user_config_systemd_dir = "${user_config_dir}/systemd"
+  $user_systemd_dir        = "${user_config_systemd_dir}/user"
+
   contain rootless_gitlab_runner::apt_repos
   contain rootless_gitlab_runner::packages
   contain rootless_gitlab_runner::user

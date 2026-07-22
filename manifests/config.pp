@@ -138,14 +138,18 @@ class rootless_gitlab_runner::config {
   # side effects — and Puppet's file type never creates parents. Own the whole
   # parent chain explicitly (ordered after the bring-up by the class order),
   # so the first apply on a fresh host can always place the drop-in, even if a
-  # future setuptool changes what it creates. Puppet autorequires each managed
-  # parent, so the chain applies top-down.
-  $dropin_path      = "${runner_home}/.config/systemd/user/docker.service.d/no-detach-netns.conf"
-  $dropin_dir       = dirname($dropin_path)
-  $user_units_dir   = dirname($dropin_dir)
-  $user_systemd_dir = dirname($user_units_dir)
-  $user_config_dir  = dirname($user_systemd_dir)
-  file { [$user_config_dir, $user_systemd_dir, $user_units_dir, $dropin_dir]:
+  # future setuptool changes what it creates. The chain is derived bottom-up in
+  # init.pp (each directory its parent plus one element) and shared with the
+  # rootless bring-up; Puppet autorequires each managed parent, so it still
+  # applies top-down. Only the drop-in directory and file are leaves here.
+  $dropin_dir  = "${rootless_gitlab_runner::user_systemd_dir}/docker.service.d"
+  $dropin_path = "${dropin_dir}/no-detach-netns.conf"
+  file { [
+    $rootless_gitlab_runner::user_config_dir,
+    $rootless_gitlab_runner::user_config_systemd_dir,
+    $rootless_gitlab_runner::user_systemd_dir,
+    $dropin_dir,
+  ]:
     ensure => directory,
     owner  => $runner_name,
     group  => $runner_group,
