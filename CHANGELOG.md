@@ -9,24 +9,27 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
-- A Hiera data check ships with the module: it fails on any data key that no deployed class declares, instead of Hiera silently ignoring it, and flags set-but-inert subkeys under a disabled `manage` toggle with a non-failing advisory.
+- A Hiera data check ships with the module: it fails on any data key that no deployed class declares, instead of Hiera silently ignoring it, and flags subkeys set under a disabled `manage` toggle with a non-failing advisory.
 
 ### Changed
 
-- The runner-token store now reads as part of the runner family: `tokens` is renamed to `runner_tokens`, alongside `runners` and `runner_defaults`. The automatic `Sensitive` wrap on lookup moves with the new key; the host's secret store file must follow the rename, since a stale store key renders blank tokens rather than failing.
+- The parameter surface is regrouped: five flat keys plus six parameter groups replace the 49 flat parameters. Related settings now live together, one hash per concern: `runner_account`, `configuration_file`, `packages` with its apt `sources`, `rootless_docker`, `runner_service`, and `standalone` with the nested `self_update`.
+- Every subkey ships a module default and the groups merge deep across Hiera layers, so node data holds only its deviations, and a mistyped subkey now fails the compile instead of being silently ignored.
+- The runner-token store reads as part of the runner family: `tokens` is now `runner_tokens`, alongside `runners` and `runner_defaults`. The automatic `Sensitive` wrap on lookup moves with the new key; the host's secret store file must follow the rename.
+- The apply script now installs on any declared-standalone host (`standalone.manage: true`), not only with the self-update loop, so manual applies and the loop share the same single apply command; enabling the loop on a host not declared standalone fails at compile time.
 - Freshly provisioned hosts now get a 165536-wide subordinate-ID range, which satisfies the ID-mapping requirement of nested rootless BuildKit builds.
-- Subordinate UID/GID ranges are now provisioned by `manage_rootless_docker`, together with the other rootless-Docker prerequisites, instead of by `manage_runner_user`: rootless Docker can now be brought up on a host whose runner user is owned by another system. An existing range entry is never overwritten, and `manage_runner_user` keeps owning the group, user, and home.
+- Subordinate UID/GID ranges are now provisioned by `rootless_docker.manage`, together with the other rootless-Docker prerequisites, instead of by the runner-account toggle: rootless Docker can now be brought up on a host whose runner account is owned by another system. An existing range entry is never overwritten, and `runner_account.manage` keeps owning the group, user, and home.
 
 ### Removed
 
-- Every parameter the module can derive is now automatic: the rendered configuration's owner and group follow `runner_user` (which also fixes the file staying owned by the default account name when a different runner user is declared), the docker socket path follows `runner_uid`, the no-detach-netns drop-in location follows `runner_home`, and the apply's manifest, module directory and Hiera configuration follow the documented control-repository layout under `repo_path`. `service_user` goes with them: the runner manager service always runs privilege-dropped as the runner user.
+- Every parameter the module can derive is now automatic: the rendered configuration's owner and group follow `runner_account.name` (which also fixes the file staying owned by the default account name when a different account is declared), the docker socket path follows `runner_account.uid`, the no-detach-netns drop-in location follows `runner_account.home`, and the apply's manifest, module directory and Hiera configuration follow the documented control-repository layout under `standalone.control_repository_path`. `service_user` goes with them: the runner manager service always runs privilege-dropped as the runner account.
 - Deliberate choices are no longer parameters: `runner_binary`, `service_name` and `setuptool_path` take the values their packages define, `service_kill_signal` is always `SIGQUIT` (the graceful drain), and `config_mode` and `dropin_mode` keep their former defaults.
 - `check_interval`, `connection_max_age` and `shutdown_timeout` are no longer rendered. The removed lines matched GitLab Runner's own defaults, so existing hosts behave the same.
 - `on_failure_unit` is removed; a push alert attaches as a host-side `OnFailure=` drop-in on the apply or healthcheck service.
 
 ### Fixed
 
-- With `manage_apt_repos` on, repeated applies stop churning apt: an unchanged repository signing key is now a true no-op (no keyring rewrite, no needless `apt-get update`), while a genuine key rotation is still picked up from the vendor's rolling key endpoint and refreshes the apt index.
+- With `packages.sources.manage` on, repeated applies stop churning apt: an unchanged repository signing key is now a true no-op (no keyring rewrite, no needless `apt-get update`), while a genuine key rotation is still picked up from the vendor's rolling key endpoint and refreshes the apt index.
 
 ## [1.0.0] - 2026-07-09
 
