@@ -315,8 +315,11 @@ class rootless_gitlab_runner (
 
   # Rootless runtime paths derived from the uid where known: the module
   # itself installs the daemon socket at /run/user/<uid>/docker.sock, so the
-  # path is derivation, not configuration. An exotic external socket is
-  # expressible via runner_service.environment.
+  # path is derivation, not configuration. The one escape hatch is narrow:
+  # runner_service.environment can point the manager service's DOCKER_HOST at
+  # a socket elsewhere. Nothing else follows it — the socket_mount volume and
+  # the healthcheck probe keep using the derived path — so it is not a general
+  # "external daemon" switch.
   if $runner_account['uid'] =~ Integer {
     $runtime_dir = "/run/user/${runner_account['uid']}"
     $socket_path = "${runtime_dir}/docker.sock"
