@@ -1,5 +1,6 @@
 require 'spec_helper'
 require 'yaml'
+require 'deep_merge'
 
 # puppetlabs-apt compiles only on Debian-family facts; the suite otherwise runs
 # factless, so the apt-enabled and example contexts pin the single supported
@@ -33,12 +34,6 @@ describe 'rootless_gitlab_runner' do
     YAML.safe_load(File.read(File.expand_path(File.join(__dir__, '..', '..', 'examples', *path))))
   end
 
-  def deep_merge(base, override)
-    base.merge(override) do |_k, old, new|
-      old.is_a?(Hash) && new.is_a?(Hash) ? deep_merge(old, new) : new
-    end
-  end
-
   # rspec-puppet serializes a Ruby nil param value as the literal string
   # "nil"; a YAML `~` default must reach Puppet as undef instead.
   def undefize(value)
@@ -50,9 +45,16 @@ describe 'rootless_gitlab_runner' do
   end
 
   # A struct parameter's module-data default with overrides merged deep over
-  # it, mirroring the deep-merge lookup_options a Hiera consumer gets.
+  # it, mirroring the deep-merge lookup_options a Hiera consumer gets (strategy:
+  # deep, knockout_prefix: '--'): scalars from the override win, sub-hashes
+  # merge recursively, arrays union across layers, and a '--'-prefixed element
+  # knocks the matching one out. Uses the same deep_merge gem Hiera's deep
+  # strategy is built on, so struct_param merges the way Hiera would rather than
+  # replacing whole arrays. Both operands are deep-copied first: deep_merge!
+  # mutates its destination, and MODULE_DATA must stay pristine across calls.
   def struct_param(name, overrides = {})
-    undefize(deep_merge(MODULE_DATA.fetch("rootless_gitlab_runner::#{name}"), overrides))
+    base = Marshal.load(Marshal.dump(MODULE_DATA.fetch("rootless_gitlab_runner::#{name}")))
+    undefize(DeepMerge.deep_merge!(Marshal.load(Marshal.dump(overrides)), base, knockout_prefix: '--'))
   end
 
   context 'with defaults' do
