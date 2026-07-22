@@ -346,6 +346,11 @@ class rootless_gitlab_runner (
     ]))
   }
 
+  # The inner `undef => []` arm (environment unset and no derivable socket) is
+  # reached only when runner_service.manage is off: the fail-loud guard above
+  # rejects that exact combination while the service is managed. So [] is the
+  # never-consumed value that keeps the selector total — service.pp renders the
+  # drop-in only under manage — not a deliberately empty Environment.
   $real_service_environment = $runner_service['environment'] ? {
     undef   => $socket_path ? {
       undef   => [],
