@@ -196,10 +196,11 @@
 #   of the apply command for timer-driven and manual runs. Default false.
 # @option standalone [Stdlib::Absolutepath] :control_repository_path
 #   Root-owned checkout of the control repository on the host (the apply and
-#   self-update target). The apply's manifest, module directory and Hiera
-#   configuration derive strictly from the documented layout beneath it
-#   (`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml`).
-#   Default `/opt/gitlab-runner-infra`.
+#   self-update target). The apply's manifest, module directory, Hiera
+#   configuration and optional `Puppetfile` derive strictly from the documented
+#   layout beneath it (`puppet/manifests/site.pp`, `puppet/modules`,
+#   `puppet/hiera.yaml`, and `Puppetfile` at the root — r10k installs it each
+#   tick when present). Default `/opt/gitlab-runner-infra`.
 # @option standalone [String[1]] :control_repository_branch
 #   Branch the self-update loop follows (protected, signed). Default `main`.
 # @option standalone [Stdlib::Absolutepath] :puppet_confdir

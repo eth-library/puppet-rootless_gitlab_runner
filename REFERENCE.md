@@ -360,10 +360,11 @@ Options:
 (`/usr/local/sbin/rootless-gitlab-runner-apply`), the single definition
 of the apply command for timer-driven and manual runs. Default false.
 * **:control_repository_path** `Stdlib::Absolutepath`: Root-owned checkout of the control repository on the host (the apply and
-self-update target). The apply's manifest, module directory and Hiera
-configuration derive strictly from the documented layout beneath it
-(`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml`).
-Default `/opt/gitlab-runner-infra`.
+self-update target). The apply's manifest, module directory, Hiera
+configuration and optional `Puppetfile` derive strictly from the documented
+layout beneath it (`puppet/manifests/site.pp`, `puppet/modules`,
+`puppet/hiera.yaml`, and `Puppetfile` at the root — r10k installs it each
+tick when present). Default `/opt/gitlab-runner-infra`.
 * **:control_repository_branch** `String[1]`: Branch the self-update loop follows (protected, signed). Default `main`.
 * **:puppet_confdir** `Stdlib::Absolutepath`: Isolated Puppet confdir for the apply — never the central agent's.
 Default `/etc/gitlab-runner-infra/puppet`.
