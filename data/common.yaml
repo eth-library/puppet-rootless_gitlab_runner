@@ -60,6 +60,7 @@ rootless_gitlab_runner::configuration_file:
 rootless_gitlab_runner::runner_account:
   manage: false
   name: 'gitlab-runner'
+  group: ~
   uid: ~
   home: '/home/gitlab-runner'
 

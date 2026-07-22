@@ -93,7 +93,8 @@
 #   and never managed. Default `/etc/gitlab-runner-infra`.
 # @param configuration_file
 #   The rendered runner configuration file (GitLab Runner's `config.toml`).
-#   Owner and group derive from `runner_account.name`; the mode is fixed 0600
+#   Owner derives from `runner_account.name` and group from
+#   `runner_account.group` (which defaults to the name); the mode is fixed 0600
 #   (the file carries the runner tokens).
 # @option configuration_file [Stdlib::Absolutepath] :path
 #   Where the file is written. Default `/etc/gitlab-runner/config.toml`.
@@ -109,6 +110,14 @@
 #   Default false.
 # @option runner_account [Rootless_gitlab_runner::Username] :name
 #   Username of the runner account. Default `gitlab-runner`.
+# @option runner_account [Optional[Rootless_gitlab_runner::Username]] :group
+#   Name of the account's primary group. Defaults to the account name (the
+#   data layer cannot express that default, so an unset key falls back to
+#   `name` in code). Set it for an externally provisioned account whose primary
+#   group is named differently (account `ci-worker`, group `ci`): it feeds
+#   every group ownership the module manages — the group resource and the
+#   user's primary group where `manage` is on, and the group of the runner
+#   configuration file, its directory, and the account's systemd user tree.
 # @option runner_account [Optional[Integer[1]]] :uid
 #   Numeric uid of the runner account. No default: the uid is host data, not
 #   something a module can sensibly invent. It derives the rootless runtime
@@ -229,6 +238,7 @@ class rootless_gitlab_runner (
   Struct[{
     manage => Boolean,
     name   => Rootless_gitlab_runner::Username,
+    group  => Optional[Rootless_gitlab_runner::Username],
     uid    => Optional[Integer[1]],
     home   => Stdlib::Absolutepath,
   }]                               $runner_account,
@@ -290,6 +300,15 @@ class rootless_gitlab_runner (
       'rootless_docker.manage or standalone.self_update.manage is enabled',
     ]))
   }
+
+  # The account's primary group, derived once and read as a group by every
+  # concern (the group resource and the user's gid in user.pp, and every
+  # managed file's group in config.pp). The data layer cannot express "same as
+  # the account name", so the default is an absent key and the fallback lives
+  # here: an unset group follows the account name — correct by construction
+  # where the module creates the account — while a set group names the
+  # differently named primary group of an externally provisioned account.
+  $runner_group = pick($runner_account['group'], $runner_account['name'])
 
   # Defaults merged under every runner entry; keys set on the entry win.
   $effective_runners = $runners.map |$r| { $runner_defaults + $r }

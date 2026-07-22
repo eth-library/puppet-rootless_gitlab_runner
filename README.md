@@ -283,15 +283,23 @@ dependencies; the example skeleton carries the lines).
 
 #### `runner_account`
 
-The OS account the runner manager and the rootless daemon run as: `name`, `uid`, and `home`,
-with `manage` deciding ownership. The identity keys are read by every concern even when
-`manage: false` (socket derivation, file ownership, service `ExecStart`); the toggle only
-decides whether the module creates and enforces the group, user, and home. Keep `manage` off
-where another configuration-management system owns the account; two owners would fight over
+The OS account the runner manager and the rootless daemon run as: `name`, an optional `group`,
+`uid`, and `home`, with `manage` deciding ownership. The identity keys are read by every concern
+even when `manage: false` (socket derivation, file ownership, service `ExecStart`); the toggle
+only decides whether the module creates and enforces the group, user, and home. Keep `manage`
+off where another configuration-management system owns the account; two owners would fight over
 it. The subordinate UID/GID ranges rootless Docker needs are owned by
 [`rootless_docker`](#rootless_docker), not this toggle. Home internals (`.ssh`, `.config`) are
 never managed, beyond the no-detach-netns drop-in the module places under
 `~/.config/systemd/user/`.
+
+`group` names the account's primary group and defaults to `name`. Set it for an externally
+provisioned account whose primary group is named differently (account `ci-worker`, group `ci`):
+it feeds every group ownership the module manages — the group resource and the user's primary
+group where `manage` is on, and the group of the runner configuration file, its directory, and
+the account's systemd user tree — so the first apply converges instead of failing to resolve a
+group that does not exist. Left unset, the account name doubles as the group, which is correct
+by construction where the module creates the account.
 
 #### `rootless_docker`
 

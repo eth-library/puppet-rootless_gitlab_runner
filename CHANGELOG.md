@@ -9,6 +9,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- An externally provisioned runner account whose primary group is named differently from the account now converges on the first apply: the new optional `runner_account.group` names the account's primary group and feeds every group ownership the module manages. It defaults to the account name, so existing hosts are unchanged.
 - A Hiera data check ships with the module: it fails on any data key that no deployed class declares, instead of Hiera silently ignoring it, and flags subkeys set under a disabled `manage` toggle with a non-failing advisory.
 
 ### Changed
