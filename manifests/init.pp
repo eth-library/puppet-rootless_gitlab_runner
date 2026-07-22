@@ -173,12 +173,12 @@
 #   Whether to manage the runner system service, its privilege-drop systemd
 #   drop-in, and the configuration directory's mode so a privilege-dropped
 #   manager can traverse to its configuration file. Default false.
-# @option runner_service [Optional[Array[String]]] :environment
+# @option runner_service [Optional[Array[Pattern[/\A[^\r\n]+\z/]]]] :environment
 #   `Environment=` lines (KEY=value) rendered into the service drop-in. When
 #   unset, defaults to pointing DOCKER_HOST at the rootless docker socket
-#   derived from `runner_account.uid`. Each line must be a single line — a
-#   value containing a newline is rejected, so it cannot inject an extra
-#   systemd directive into the drop-in.
+#   derived from `runner_account.uid`. The `Pattern` enforces the type: each
+#   line must be non-empty and single-line — a value containing a newline is
+#   rejected, so it cannot inject an extra systemd directive into the drop-in.
 # @option runner_service [Optional[Variant[Integer[0], String[1]]]] :timeout_stop_sec
 #   `TimeoutStopSec=` written into the manager service drop-in — how long
 #   systemd waits for a graceful drain before escalating to `SIGKILL`. Unset
@@ -217,7 +217,7 @@
 #   live there, not in the symlink farm).
 # @option standalone [String[1]] :healthcheck_interval
 #   systemd time span between healthcheck runs. Default `15min`.
-# @option standalone [Hash] :self_update
+# @option standalone [Struct[{ manage => Boolean, apply_interval => String[1], apply_timeout => String[1] }]] :self_update
 #   The self-update loop: `manage` (default false) installs a oneshot
 #   service + timer that fetch the control repository, verify the commit
 #   signature, reset to the remote branch, run `r10k puppetfile install` and

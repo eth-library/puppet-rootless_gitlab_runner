@@ -317,11 +317,11 @@ Options:
 * **:manage** `Boolean`: Whether to manage the runner system service, its privilege-drop systemd
 drop-in, and the configuration directory's mode so a privilege-dropped
 manager can traverse to its configuration file. Default false.
-* **:environment** `Optional[Array[String]]`: `Environment=` lines (KEY=value) rendered into the service drop-in. When
+* **:environment** `Optional[Array[Pattern[/\A[^\r\n]+\z/]]]`: `Environment=` lines (KEY=value) rendered into the service drop-in. When
 unset, defaults to pointing DOCKER_HOST at the rootless docker socket
-derived from `runner_account.uid`. Each line must be a single line — a
-value containing a newline is rejected, so it cannot inject an extra
-systemd directive into the drop-in.
+derived from `runner_account.uid`. The `Pattern` enforces the type: each
+line must be non-empty and single-line — a value containing a newline is
+rejected, so it cannot inject an extra systemd directive into the drop-in.
 * **:timeout_stop_sec** `Optional[Variant[Integer[0], String[1]]]`: `TimeoutStopSec=` written into the manager service drop-in — how long
 systemd waits for a graceful drain before escalating to `SIGKILL`. Unset
 by default, so systemd's `DefaultTimeoutStopSec` (typically 90s) applies;
@@ -376,7 +376,7 @@ non-login apply can find them. Default `/opt/puppetlabs/bin`; the
 AIO-reuse topology sets `/opt/puppetlabs/puppet/bin` (gem executables
 live there, not in the symlink farm).
 * **:healthcheck_interval** `String[1]`: systemd time span between healthcheck runs. Default `15min`.
-* **:self_update** `Hash`: The self-update loop: `manage` (default false) installs a oneshot
+* **:self_update** `Struct[{ manage => Boolean, apply_interval => String[1], apply_timeout => String[1] }]`: The self-update loop: `manage` (default false) installs a oneshot
 service + timer that fetch the control repository, verify the commit
 signature, reset to the remote branch, run `r10k puppetfile install` and
 re-apply — plus the healthcheck script + timer. Only valid on a
