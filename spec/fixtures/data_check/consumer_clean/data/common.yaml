@@ -5,9 +5,7 @@ lookup_options:
   rootless_gitlab_runner::runner_tokens:
     convert_to: 'Sensitive'
 rootless_gitlab_runner::concurrent: 1
-rootless_gitlab_runner::manage_runner_user: false
-rootless_gitlab_runner::manage_rootless_docker: false
-rootless_gitlab_runner::manage_runner_service: false
-rootless_gitlab_runner::manage_standalone_self_update: false
-rootless_gitlab_runner::packages: []
+rootless_gitlab_runner::runner_defaults: {}
+rootless_gitlab_runner::packages:
+  install: []
 rootless_gitlab_runner::runners: []

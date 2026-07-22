@@ -3,10 +3,10 @@
 class rootless_gitlab_runner::rootless_docker {
   assert_private()
 
-  if $rootless_gitlab_runner::manage_rootless_docker {
-    $runner_user = $rootless_gitlab_runner::runner_user
-    $runner_home = $rootless_gitlab_runner::runner_home
-    $runner_uid  = $rootless_gitlab_runner::runner_uid
+  if $rootless_gitlab_runner::rootless_docker['manage'] {
+    $runner_user = $rootless_gitlab_runner::runner_account['name']
+    $runner_home = $rootless_gitlab_runner::runner_account['home']
+    $runner_uid  = $rootless_gitlab_runner::runner_account['uid']
     $runtime_dir = $rootless_gitlab_runner::runtime_dir
     $user_env    = $rootless_gitlab_runner::runner_user_env
     # The setuptool ships at the path the docker-ce-rootless-extras package
@@ -45,14 +45,14 @@ class rootless_gitlab_runner::rootless_docker {
 
     # Rootless docker needs >= 65536 subordinate IDs per user, and `useradd
     # --system` allocates none, so the ranges are provisioned here with the
-    # rest of the rootless runtime: also when the runner user itself is owned
-    # externally (manage_runner_user off). usermod (--add-subuids /
+    # rest of the rootless runtime: also when the runner account itself is
+    # owned externally (runner_account.manage off). usermod (--add-subuids /
     # --add-subgids, shadow 4.8.1) takes an inclusive range and writes the
     # entry under the shadow file lock; it fails loud when the user does not
     # exist yet. Guarded per file: an existing entry for the user is left
     # alone (no drift war over externally chosen ranges).
-    $subid_first = $rootless_gitlab_runner::subid_start
-    $subid_last  = $subid_first + $rootless_gitlab_runner::subid_count - 1
+    $subid_first = $rootless_gitlab_runner::rootless_docker['subid_start']
+    $subid_last  = $subid_first + $rootless_gitlab_runner::rootless_docker['subid_count'] - 1
     $subid_flags = { 'subuid' => '--add-subuids', 'subgid' => '--add-subgids' }
     $subid_flags.each |$f, $flag| {
       exec { "rootless_gitlab_runner ${f} entry":

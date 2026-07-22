@@ -108,8 +108,8 @@ OS to a fully configured one. Each step is detailed in [Installation](#installat
    the `Puppetfile`, clone it to the host, and fetch its modules with r10k.
 3. Create the off-repository secret store and add the runner's `glrt-` token
    ([Editing the secret store](#editing-the-secret-store)).
-4. Rename the example node file to `puppet/data/nodes/<hostname>.yaml` and set `runner_uid` and
-   the runner's `token_key`.
+4. Rename the example node file to `puppet/data/nodes/<hostname>.yaml` and set
+   `runner_account.uid` and the runner's `token_key`.
 5. Dry-run, then apply.
 
 Once the apply succeeds, the runner connects to GitLab; see
@@ -120,7 +120,7 @@ Once the apply succeeds, the runner connects to GitLab; see
 > [!TIP]
 > **Use a dedicated host for the GitLab Runner.** Its only job should be running the runners,
 > ideally on a disposable, rebuildable VM. To harden the runner the module takes over
-> host-level state: with `manage_rootless_docker` on it masks the host's rootful Docker and containerd daemons, and
+> host-level state: with `rootless_docker.manage` on it masks the host's rootful Docker and containerd daemons, and
 > it manages the runner user and its rootless daemon. That is safe on a single-purpose host but would
 > disrupt other workloads, so it is not intended for a server that also runs other applications or
 > services. Dedicating a host to the runner is the common, best-practice approach and the cleaner
@@ -146,18 +146,18 @@ for the exact supported version range). Before an apply does anything useful, th
 
 - **Puppet (or OpenVox) 8** installed and `puppet` on `PATH`.
 - The **`gitlab-runner` system user and home**, plus its **rootless-Docker** user daemon,
-  unless the module manages them: with `manage_runner_user` off the user is an external
+  unless the module manages them: with `runner_account.manage` off the user is an external
   prerequisite (owned elsewhere, for example by a central Puppet), and with
-  `manage_rootless_docker` off the daemon and its host requirements are.
+  `rootless_docker.manage` off the daemon and its host requirements are.
 
 What the module owns on a host is configuration too; the ownership toggles and their parameters
 live in the [Configuration contract](#configuration-contract).
 
 ### Host requirements
 
-A rootless GitLab Runner host needs the following in place. With `manage_runner_user` and
-`manage_rootless_docker` on, the module establishes and keeps converging them (apt packages by
-listing them in `packages`); with the toggles off they are external prerequisites the host must
+A rootless GitLab Runner host needs the following in place. With `runner_account.manage` and
+`rootless_docker.manage` on, the module establishes and keeps converging them (apt packages by
+listing them under `packages.install`); with the toggles off they are external prerequisites the host must
 provide, and the preflight is not enforced — so a missing prerequisite on the toggle-off path
 surfaces as a raw Puppet or host error rather than the module's clear preflight message. On Ubuntu
 22.04 these are the current, verified requirements:
@@ -195,7 +195,7 @@ module never writes system-wide configuration):
   a host-side drop-in in `/etc/systemd/system/user@.service.d/`.
 - `ping` inside containers needs the `net.ipv4.ping_group_range` sysctl; binding ports below
   1024 needs a sysctl or capability grant. Build jobs rarely need either.
-- **Package versions are neither pinned nor held** — `packages` uses `ensure => installed`. This
+- **Package versions are neither pinned nor held** — `packages.install` uses `ensure => installed`. This
   is deliberate: the module exists to make routine upgrades *safe* (the `no-detach-netns` fix
   survives them), not to freeze them, so per-apply convergence — not a version lock — is the
   defense against a bad upgrade. Pin or hold at the apt layer where a specific host needs it.
@@ -223,57 +223,84 @@ below.
 
 ### Opt-in concerns
 
-Each remaining concern is a Hiera toggle, opt-in by default:
+The parameter surface groups each remaining concern into a struct whose `manage` key is the
+ownership toggle, opt-in by default:
 
-| Concern | Hiera parameter | Default |
+| Concern | Hiera key | Default |
 |---|---|---|
-| apt packages | [`rootless_gitlab_runner::packages`](#packages) | `[]` |
-| apt repositories serving those packages | [`rootless_gitlab_runner::manage_apt_repos`](#manage_apt_repos) | `false` |
-| Runner user, home | [`rootless_gitlab_runner::manage_runner_user`](#manage_runner_user) | `false` |
-| Rootless-Docker daemon bring-up, subordinate IDs | [`rootless_gitlab_runner::manage_rootless_docker`](#manage_rootless_docker) | `false` |
-| Runner service + its systemd drop-in | [`rootless_gitlab_runner::manage_runner_service`](#manage_runner_service) | `false` |
-| Standalone self-update loop + healthcheck | [`rootless_gitlab_runner::manage_standalone_self_update`](#manage_standalone_self_update) | `false` |
+| apt packages | [`packages.install`](#packages) | `[]` |
+| apt sources serving those packages | [`packages.sources.manage`](#packagessources) | `false` |
+| Runner account (group, user, home) | [`runner_account.manage`](#runner_account) | `false` |
+| Rootless-Docker daemon bring-up, subordinate IDs | [`rootless_docker.manage`](#rootless_docker) | `false` |
+| Runner service + its systemd drop-in | [`runner_service.manage`](#runner_service) | `false` |
+| Standalone topology (the apply script) | [`standalone.manage`](#standalone) | `false` |
+| Self-update loop + healthcheck | [`standalone.self_update.manage`](#standaloneself_update) | `false` |
+
+The `manage` keys are **persistent ownership switches**, not one-shot bootstrap flags:
+set once in the host's Hiera and left on, so every apply keeps owning and drift-correcting that
+concern. `false` means hands-off, not ensure-off. A `manage` key decides whether the module
+creates and enforces its concern's *resources*; most struct keys are consumed only by their own
+concern, so they are inert while its `manage` is false, while `runner_account`'s identity keys
+are shared inputs every concern reads.
+
+#### Struct parameters and deep merge
+
+Every subkey has a module-supplied default, and each struct parameter carries a deep-merge
+lookup rule, so consumer data holds only deviations: a node file setting
+`rootless_docker.manage: true` inherits the rest of that struct from the module defaults, and
+different Hiera layers can each own different subkeys. Within a merged struct, a scalar subkey
+set at a higher-priority layer wins and hashes merge recursively; array subkeys are **unioned**
+across layers, and an element prefixed with `--` (the deep-merge knockout prefix) removes the
+matching element a lower layer contributed. Removing a whole subkey through data is not
+expressible: override it with the intended value instead. A mistyped subkey fails the compile
+instead of being silently ignored. The documented consumption pattern is Hiera plus
+`include rootless_gitlab_runner`; a resource-style class declaration bypasses Hiera merging and
+must pass complete struct hashes.
 
 #### `packages`
 
-The apt packages to ensure installed; the default empty list installs nothing. A rootless-runner
-host on Ubuntu 22.04 needs the user-namespace helper `uidmap` [\[13\]](#ref-13) and
-`dbus-user-session` [\[29\]](#ref-29); the Docker Engine package `docker-ce` [\[30\]](#ref-30), its
-CLI `docker-ce-cli` [\[31\]](#ref-31) and the rootless extras `docker-ce-rootless-extras` (rootless
-mode [\[4\]](#ref-4)); `containerd.io`, which packages the containerd runtime [\[32\]](#ref-32);
-and `gitlab-runner` [\[5\]](#ref-5). The standalone
-[example host data](examples/data/nodes/host.example.yaml) lists the full set. Their apt source is
-managed by [`manage_apt_repos`](#manage_apt_repos) or provided externally.
+`packages.install` lists the apt packages to ensure installed; the default empty list installs
+nothing, and the module only installs — it never removes, pins, or upgrades packages. A
+rootless-runner host on Ubuntu 22.04 needs the user-namespace helper `uidmap`
+[\[13\]](#ref-13) and `dbus-user-session` [\[29\]](#ref-29); the Docker Engine package
+`docker-ce` [\[30\]](#ref-30), its CLI `docker-ce-cli` [\[31\]](#ref-31) and the rootless
+extras `docker-ce-rootless-extras` (rootless mode [\[4\]](#ref-4)); `containerd.io`, which
+packages the containerd runtime [\[32\]](#ref-32); and `gitlab-runner` [\[5\]](#ref-5). The
+standalone [example host data](examples/data/nodes/host.example.yaml) lists the full set.
+Their apt source is managed by [`packages.sources`](#packagessources) or provided externally.
 
-The `manage_*` parameters are **persistent ownership switches**, not one-shot bootstrap flags:
-set once in the host's Hiera and left on, so every apply keeps owning and drift-correcting that
-concern. `false` means hands-off, not ensure-off.
+#### `packages.sources`
 
-#### `manage_apt_repos`
+With `packages.sources.manage` on, the module adds the Docker and GitLab Runner apt
+repositories (with their signing keys) via `puppetlabs/apt`, so the `packages.install` list
+installs on stock Ubuntu. Keep it off where apt sources are owned elsewhere. The
+`packages.sources.docker` and `packages.sources.gitlab_runner` sub-hashes each carry
+`location` and `key_source` (verbatim `apt::source` parameter names), overridden only to point
+at a mirror; the defaults are the vendors' repositories and their rolling signing-key
+endpoints. `puppetlabs/apt` is needed only by this toggle; `puppetlabs/stdlib` is needed
+unconditionally. Consumers add both to their Puppetfile (r10k does not resolve module metadata
+dependencies; the example skeleton carries the lines).
 
-Adds the Docker and GitLab Runner apt repositories (with their signing
-keys) via `puppetlabs/apt`, so the `packages` list installs on stock Ubuntu. Keep it off where
-apt sources are owned elsewhere. `puppetlabs/apt` is needed only by this toggle;
-`puppetlabs/stdlib` is needed unconditionally. Consumers add both to their Puppetfile (r10k
-does not resolve module metadata dependencies; the example skeleton carries the lines).
+#### `runner_account`
 
-#### `manage_runner_user`
+The OS account the runner manager and the rootless daemon run as: `name`, `uid`, and `home`,
+with `manage` deciding ownership. The identity keys are read by every concern even when
+`manage: false` (socket derivation, file ownership, service `ExecStart`); the toggle only
+decides whether the module creates and enforces the group, user, and home. Keep `manage` off
+where another configuration-management system owns the account; two owners would fight over
+it. The subordinate UID/GID ranges rootless Docker needs are owned by
+[`rootless_docker`](#rootless_docker), not this toggle. Home internals (`.ssh`, `.config`) are
+never managed, beyond the no-detach-netns drop-in the module places under
+`~/.config/systemd/user/`.
 
-Owns the runner group, user, and home. Keep it off
-where another configuration-management system owns the user; two owners would fight over it.
-The subordinate UID/GID ranges rootless Docker needs are owned by
-[`manage_rootless_docker`](#manage_rootless_docker), not this toggle.
-Home internals (`.ssh`, `.config`) are never managed, beyond the no-detach-netns drop-in the
-module places under `~/.config/systemd/user/`.
+#### `rootless_docker`
 
-#### `manage_rootless_docker`
-
-Brings up the rootless-Docker user daemon: provisions the subordinate UID/GID ranges the
-daemon needs (`subid_start`/`subid_count`, default `231072`/`165536`; an existing entry is
-never overwritten), enables lingering and runs
+With `rootless_docker.manage` on, the module brings up the rootless-Docker user daemon:
+provisions the subordinate UID/GID ranges the daemon needs (`subid_start`/`subid_count`,
+default `231072`/`165536`; an existing entry is never overwritten), enables lingering and runs
 `dockerd-rootless-setuptool.sh install` [\[4\]](#ref-4) as the runner user (guarded on installed state, so it
 runs only until the rootless daemon's user unit exists). The ranges are provisioned for the
-runner user whether the module owns the account ([`manage_runner_user`](#manage_runner_user))
+runner user whether the module owns the account ([`runner_account`](#runner_account))
 or another system does. The setuptool is upstream's
 supported installer and ships in `docker-ce-rootless-extras`, version-locked to the daemon
 it configures — the module invokes it rather than re-rendering its output, so the generated
@@ -284,7 +311,7 @@ the other changing.
 
 The whole chain sits behind a fail-loud preflight that asserts the prerequisites (`newuidmap` present,
 subordinate IDs of at least 65,536, lingering enabled, cgroup v2) and aborts with a clear
-message — only active when `manage_rootless_docker` is `true`. On a host where everything is already in place the
+message — only active when `rootless_docker.manage` is `true`. On a host where everything is already in place the
 chain is a no-op.
 
 The toggle also **stops and masks the rootful system
@@ -292,50 +319,68 @@ The toggle also **stops and masks the rootful system
 `docker-ce`/`containerd.io` starts as root), so the only container daemon on the host is the
 unprivileged one — see [Security](#security).
 
-#### `manage_runner_service`
+#### `runner_service`
 
-With `manage_runner_service` on, the module owns the `gitlab-runner` system service, a
+With `runner_service.manage` on, the module owns the `gitlab-runner` system service, a
 systemd drop-in for it (`/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf`), and
 the mode on `/etc/gitlab-runner` so the privilege-dropped manager can read its own config. The
-drop-in runs the manager privilege-dropped as the runner user — that is the module's posture,
-not a knob — with `DOCKER_HOST` pointed at the derived rootless docker socket;
-`rootless_gitlab_runner::service_environment` overrides the environment lines rendered into
-the drop-in, and `rootless_gitlab_runner::service_timeout_stop_sec` sets the graceful-drain
-window ([Restarts and graceful shutdown](#restarts-and-graceful-shutdown)).
+drop-in runs the manager privilege-dropped as the runner account — that is the module's
+posture, not a knob — with `DOCKER_HOST` pointed at the derived rootless docker socket;
+`runner_service.environment` overrides the environment lines rendered into the drop-in, and
+`runner_service.timeout_stop_sec` sets the graceful-drain window
+([Restarts and graceful shutdown](#restarts-and-graceful-shutdown)).
 
-#### `manage_standalone_self_update`
+#### `standalone`
 
-Installs the self-update loop, two units each on its own timer:
+`standalone.manage` declares the host standalone — a host that applies itself with
+`puppet apply` from a control-repository checkout (`standalone.control_repository_path`),
+rather than being deployed by a Puppet server. It installs the apply script
+(`/usr/local/sbin/rootless-gitlab-runner-apply`), the single definition of the apply command
+for manual runs and the self-update loop alike
+([Applying the configuration](#applying-the-configuration)). The apply's manifest, module
+directory and Hiera configuration derive from the documented control-repository layout
+(`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml` beneath the checkout); the
+isolated Puppet state directories are `standalone.puppet_confdir`/`standalone.puppet_vardir`,
+and `standalone.puppet_bindir` locates the `puppet`/`r10k` executables for the timer-driven,
+non-login apply.
 
-- An apply script (`/usr/local/sbin/rootless-gitlab-runner-apply`), a oneshot systemd service +
-  timer (default every `5min`) that fetch the control-repository checkout (`repo_path`), run
-  `git verify-commit` on the remote branch (only signed commits are applied), reset to it, install
-  Puppetfile-pinned modules via `r10k puppetfile install` (a no-op without a Puppetfile), and
-  re-apply.
-- A healthcheck script + timer (default every `15min`) that verifies the manager service, the
-  rootless daemon (`docker info` as the runner user, from a non-login context), and that the
-  checkout is not stale against the remote (a dead pull credential fails loud instead of leaving
-  the host applying old code behind a green timer).
+#### `standalone.self_update`
 
-The service sets `HOME=/root` (git/SSH need it) and an explicit `TimeoutStartSec`; Puppet exit
-code 2 ("changes applied") counts as success.
+With `standalone.self_update.manage` on — only valid on a standalone host: enabling it with
+`standalone.manage` off fails at compile time — the module installs the self-update loop, two
+units each on its own timer:
+
+- A oneshot systemd service + timer (default every `5min`, `standalone.self_update.apply_interval`)
+  that fetch the control-repository checkout, run `git verify-commit` on the remote branch
+  (only signed commits are applied), reset to it, install Puppetfile-pinned modules via
+  `r10k puppetfile install` (a no-op without a Puppetfile), and re-apply through the apply
+  script above.
+- A healthcheck script + timer (default every `15min`, `standalone.healthcheck_interval`) that
+  verifies the manager service, the rootless daemon (`docker info` as the runner user, from a
+  non-login context), and that the checkout is not stale against the remote (a dead pull
+  credential fails loud instead of leaving the host applying old code behind a green timer).
+
+The service sets `HOME=/root` (git/SSH need it) and an explicit `TimeoutStartSec`
+(`standalone.self_update.apply_timeout`); Puppet exit code 2 ("changes applied") counts as
+success.
 
 Never enable it where a Puppet server or r10k already deploys the host: one deploy agent per host.
 
 ### Host-specific values
 
 Beyond the toggles, two contract values are **host data** — set per host in the Hiera node
-file ([`host.example.yaml`](examples/data/nodes/host.example.yaml) shows both). `runner_uid`
-has no default and the apply **fails at compile time with a clear message** when it is unset
-but needed; `repo_path` is defaulted but host-specific:
+file ([`host.example.yaml`](examples/data/nodes/host.example.yaml) shows both).
+`runner_account.uid` has no default and the apply **fails at compile time with a clear
+message** when it is unset but needed; `standalone.control_repository_path` is defaulted but
+host-specific:
 
-| Parameter | Description | Default |
+| Hiera key | Description | Default |
 |---|---|---|
-| `runner_uid` | Numeric uid of the runner user; the rootless runtime paths (`/run/user/<uid>`, the docker socket) derive from it | none — required when `manage_runner_user`, `manage_rootless_docker` or `manage_standalone_self_update` is on, or for a `socket_mount` runner |
-| `repo_path` | Checkout of the control repository on the host (the self-update target) | `/opt/gitlab-runner-infra` |
+| `runner_account.uid` | Numeric uid of the runner account; the rootless runtime paths (`/run/user/<uid>`, the docker socket) derive from it | none — required when `runner_account.manage`, `rootless_docker.manage` or `standalone.self_update.manage` is on, or for a `socket_mount` runner |
+| `standalone.control_repository_path` | Checkout of the control repository on the host (the apply and self-update target) | `/opt/gitlab-runner-infra` |
 
-A wrong `repo_path` is caught at runtime — by the self-update service's fetch and the
-healthcheck's staleness assertion — not at compile time.
+A wrong `standalone.control_repository_path` is caught at runtime — by the self-update
+service's fetch and the healthcheck's staleness assertion — not at compile time.
 
 ### File layout
 
@@ -421,9 +466,11 @@ pipeline (parser validation, YAML lint, this check) for a standalone control rep
 same command also works as a pre-commit hook for local feedback. Two behaviors to know:
 
 - **Advisory, non-failing:** subkeys set under a hash parameter whose effective `manage`
-  toggle resolves to `false` are recognized but inert (the module is hands-off that concern).
-  The check reports them as an advisory rather than a failure — declaring the state of an
-  externally owned concern can be intentional — and a human judges intent.
+  toggle resolves to `false` are recognized but not enforced as resources (the module is
+  hands-off that concern, though it may still read some of them as shared inputs; see
+  the `manage`-key rule above). The check reports them as an advisory rather than a
+  failure — declaring the state of an externally owned concern can be intentional — and a
+  human judges intent.
 - **Stated limits:** the check validates key names, not values (types are the compiler's job,
   enforced at compile time), and it cannot see data layers outside the repository, such as the
   off-repository secret store. Hierarchy levels addressed by `glob`/`globs` or `mapped_paths`
@@ -456,7 +503,7 @@ kernel's user namespace enforces it on every container, with no operator action 
   masked, so the only container daemon on the host is the rootless one.
 - Only the runner user (with its `DOCKER_HOST`) reaches the daemon; the system-wide `docker` CLI
   is inert for everyone else.
-- The runner **manager service** always drops to the runner user, so not even the manager
+- The runner **manager service** always drops to the runner account, so not even the manager
   runs as root.
 - Runner **tokens** are handled as `Sensitive` values and stay file-private to the runner uid (see
   [Secrets](#secrets)).
@@ -649,13 +696,14 @@ repository. Bootstrapping a host (run as root):
    sudo /opt/puppetlabs/bin/puppet apply --noop --confdir /etc/gitlab-runner-infra/puppet --vardir /var/lib/grunner-puppet --modulepath puppet/modules --hiera_config puppet/hiera.yaml puppet/manifests/site.pp
    ```
 
-7. If the preview looks right, apply for real (same command without `--noop`).
-8. Optionally set `manage_standalone_self_update: true` to have the module install the apply
-   script and timers that automate future applies (see
-   [Automating with systemd](#automating-with-systemd)).
+7. If the preview looks right, apply for real (same command without `--noop`). With
+   `standalone.manage: true` (as in the example node data), this apply also installs the apply
+   script that carries every later manual run.
+8. Optionally set `standalone.self_update.manage: true` to have the module install the timers
+   that automate future applies (see [Automating with systemd](#automating-with-systemd)).
 9. Check the result (see [Verifying the host](#verifying-the-host)).
 
-Each `manage_*` toggle decides whether the module owns a concern and keeps it converged (on) or
+Each `manage` toggle decides whether the module owns a concern and keeps it converged (on) or
 treats it as an external prerequisite the host must provide (off). The semantics and the full
 toggle table are in the [Configuration contract](#configuration-contract).
 
@@ -669,7 +717,7 @@ instead of the apply script and service below.*
 
 Run as root on the host.
 
-With `manage_standalone_self_update` on, the module installs
+With `standalone.manage` on, the module installs
 `/usr/local/sbin/rootless-gitlab-runner-apply` — the **single definition of the apply command**.
 It runs `puppet apply` with an isolated `--confdir`/`--vardir` so it never collides with a
 central Puppet agent, installs Puppetfile-pinned modules via r10k first (a no-op without a
@@ -696,7 +744,7 @@ sudo /usr/local/sbin/rootless-gitlab-runner-apply
 The script uses `--detailed-exitcodes` [\[1\]](#ref-1): exit code 0 means no changes, 2 means changes were
 applied (success, not failure), 4 or 6 mean failures.
 
-With the self-update units installed, prefer triggering a run through the apply service
+With the self-update units installed (`standalone.self_update.manage`), prefer triggering a run through the apply service
 rather than the script directly. It goes through the same fetch + signature-verify chain the
 timer uses and serialises against it — the oneshot never overlaps a scheduled run:
 
@@ -707,7 +755,7 @@ sudo systemctl start gitlab-runner-apply.service
 Running the script directly bypasses that serialisation and the fetch/verify step; keep it for
 `--noop` previews and ad-hoc local runs.
 
-Before the script exists (the first apply on a fresh host, or with the self-update toggle off),
+Before the script exists (the first apply on a fresh host, or with `standalone.manage` off),
 use the plain `puppet apply` invocation from step 6 of [Installation](#installation).
 
 ### Restarts and graceful shutdown
@@ -718,7 +766,7 @@ unit files (for example the module's privilege-drop drop-in). Where the module m
 service, that restart sends **SIGQUIT** [\[20\]](#ref-20), which GitLab Runner treats as a graceful shutdown: it
 stops taking new jobs and lets running ones finish instead of aborting them, which systemd's
 default SIGTERM would do. The graceful-drain signal is fixed; the drain window is data — set
-`service_timeout_stop_sec` (systemd's `TimeoutStopSec` [\[21\]](#ref-21)) to the longest job a drain should
+`runner_service.timeout_stop_sec` (systemd's `TimeoutStopSec` [\[21\]](#ref-21)) to the longest job a drain should
 wait for before systemd escalates to SIGKILL
 (GitLab's documented example is `7200`; unset, systemd's default of roughly 90s applies).
 
@@ -727,9 +775,10 @@ wait for before systemd escalates to SIGKILL
 *Standalone only. In a fleet, your Puppet server (or existing apply pipeline) already
 provides continuous convergence.*
 
-With `manage_standalone_self_update` on, the module installs and keeps converged the full
-self-update loop: the apply script above, `gitlab-runner-apply.service` + `.timer` (fetch,
-verify the commit signature, reset to the remote branch, apply, default every 5 minutes), and
+With `standalone.self_update.manage` on, the module installs and keeps converged the full
+self-update loop: `gitlab-runner-apply.service` + `.timer` (fetch,
+verify the commit signature, reset to the remote branch, apply through the apply script above,
+default every 5 minutes), and
 `gitlab-runner-healthcheck.service` + `.timer`. Nothing needs to be copied or enabled by hand;
 the timers are started and enabled by the apply that installs them.
 
@@ -749,7 +798,7 @@ depends on the trust chain in [Self-update prerequisites](#self-update-prerequis
 ### Self-update prerequisites
 
 *Standalone only — these prerequisites (the pull credential and the whole commit-signing trust
-chain) matter only with `manage_standalone_self_update` on. A host without the self-update loop
+chain) matter only with `standalone.self_update.manage` on. A host without the self-update loop
 (a fleet host, or standalone without the timers) needs none of them.*
 
 The self-update loop fetches and verifies the control repository before it applies, so three
@@ -758,8 +807,8 @@ missing the loop fails loud on its first tick, by design: a broken trust chain m
 silently apply.
 
 Signature verification is non-optional within the loop, by design: it is what makes unattended
-auto-apply safer. To run without it, leave `manage_standalone_self_update` off and apply another
-way (plain `puppet apply`, or an operator's own timer).
+auto-apply safer. To run without it, leave `standalone.self_update.manage` off and apply another
+way (the apply script by hand, or an operator's own timer).
 
 1. **A pull credential:** The apply service fetches `origin` as root. Provision a **read-only,
    project-scoped SSH deploy key** [\[26\]](#ref-26) in root's `~/.ssh` (with the matching `known_hosts`) so the

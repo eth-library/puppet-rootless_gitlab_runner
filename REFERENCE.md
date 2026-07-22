@@ -12,11 +12,11 @@
 
 #### Private Classes
 
-* `rootless_gitlab_runner::apt_repos`: Adds the apt repositories the `packages` list installs from.
-* `rootless_gitlab_runner::config`: Renders the runner config, the no-detach-netns drop-in and the secret-store directory.
-* `rootless_gitlab_runner::packages`: Installs the packages listed in the `packages` parameter.
+* `rootless_gitlab_runner::apt_repos`: Adds the apt repositories the `packages.install` list installs from.
+* `rootless_gitlab_runner::config`: Renders the runner configuration, the no-detach-netns drop-in and the secret-store directory.
+* `rootless_gitlab_runner::packages`: Installs the packages listed under `packages.install`.
 * `rootless_gitlab_runner::rootless_docker`: Brings up the rootless docker user daemon behind a fail-loud preflight.
-* `rootless_gitlab_runner::self_update`: Installs the standalone self-update units and the healthcheck.
+* `rootless_gitlab_runner::self_update`: Installs the standalone apply script and the optional self-update loop.
 * `rootless_gitlab_runner::service`: Manages the runner system service and its privilege-drop drop-in.
 * `rootless_gitlab_runner::user`: Owns the runner group, user and home.
 
@@ -32,47 +32,61 @@
 
 ### <a name="rootless_gitlab_runner"></a>`rootless_gitlab_runner`
 
-Renders the runner config (config.toml) from a Hiera-driven list of runners,
-manages the rootless-docker "no-detach-netns" systemd user drop-in and the
-secret-store directory, installs the apt packages listed in `packages`, and
-optionally: owns the runner user, brings up the rootless docker user daemon
-(with the subordinate ID ranges it needs) behind a fail-loud
-preflight, manages the runner service together with its privilege-drop
-drop-in, and installs the standalone self-update units. Designed to run
-standalone via `puppet apply` with an isolated confdir/vardir so it never
-collides with a central Puppet agent.
+Renders the runner configuration file (config.toml) from a Hiera-driven list
+of runners, manages the rootless-docker "no-detach-netns" systemd user
+drop-in and the secret-store directory, installs the apt packages listed in
+`packages.install`, and optionally: owns the runner account, brings up the
+rootless docker user daemon (with the subordinate ID ranges it needs) behind
+a fail-loud preflight, manages the runner service together with its
+privilege-drop drop-in, and installs the standalone apply script with the
+optional self-update loop. Designed to run standalone via `puppet apply`
+with an isolated confdir/vardir so it never collides with a central Puppet
+agent.
 
 Runner tokens are never stored in this module or in version control. They
 are looked up at apply time from an off-repository secret store via the
 `runner_tokens` parameter, keyed by each runner's `token_key`.
 
-The `manage_*` parameters are persistent ownership switches, not one-shot
-bootstrap flags: set once per host and left on, so every apply keeps owning
-and drift-correcting that concern. `false` means hands-off, not ensure-off.
+Every parameter default lives in the module data layer (`data/common.yaml`),
+and each struct parameter carries a deep-merge lookup rule, so consumer data
+holds only deviations: a partial hash is merged over the module defaults on
+lookup. The documented consumption pattern is Hiera plus
+`include rootless_gitlab_runner`; a resource-style declaration bypasses
+Hiera merging and must pass complete struct hashes.
+
+The `manage` keys are persistent ownership switches, not one-shot bootstrap
+flags: set once per host and left on, so every apply keeps owning and
+drift-correcting that concern. `false` means hands-off, not ensure-off. A
+`manage` key decides whether the module creates and enforces its concern's
+resources; most struct keys are consumed only by their own concern (so they
+are inert while its `manage` is false), while `runner_account`'s identity
+keys are shared inputs every concern reads.
 
 #### Examples
 
-##### Greenfield standalone host (everything on)
+##### Greenfield standalone host (everything on), as Hiera node data
 
 ```puppet
-class { 'rootless_gitlab_runner':
-  packages              => ['uidmap', 'dbus-user-session', 'docker-ce',
-                            'docker-ce-cli', 'docker-ce-rootless-extras',
-                            'containerd.io', 'gitlab-runner'],
-  manage_apt_repos      => true,
-  runner_uid            => 2000,
-  manage_runner_user    => true,
-  manage_rootless_docker => true,
-  manage_runner_service => true,
-  runners               => [
-    { 'name'      => 'docker-rootless',
-      'url'       => 'https://gitlab.example.org/',
-      'executor'  => 'docker',
-      'image'     => 'ubuntu:22.04',
-      'token_key' => 'runner_a',
-    },
-  ],
-}
+rootless_gitlab_runner::runners:
+  - name: 'docker-rootless'
+    url: 'https://gitlab.example.org/'
+    executor: 'docker'
+    image: 'ubuntu:22.04'
+    token_key: 'runner_a'
+rootless_gitlab_runner::runner_account:
+  manage: true
+  uid: 2000
+rootless_gitlab_runner::packages:
+  install: ['uidmap', 'dbus-user-session', 'docker-ce', 'docker-ce-cli',
+            'docker-ce-rootless-extras', 'containerd.io', 'gitlab-runner']
+  sources:
+    manage: true
+rootless_gitlab_runner::rootless_docker:
+  manage: true
+rootless_gitlab_runner::runner_service:
+  manage: true
+rootless_gitlab_runner::standalone:
+  manage: true
 ```
 
 #### Parameters
@@ -83,47 +97,28 @@ The following parameters are available in the `rootless_gitlab_runner` class:
 * [`runners`](#-rootless_gitlab_runner--runners)
 * [`runner_defaults`](#-rootless_gitlab_runner--runner_defaults)
 * [`runner_tokens`](#-rootless_gitlab_runner--runner_tokens)
-* [`runner_user`](#-rootless_gitlab_runner--runner_user)
-* [`runner_uid`](#-rootless_gitlab_runner--runner_uid)
-* [`runner_home`](#-rootless_gitlab_runner--runner_home)
-* [`config_path`](#-rootless_gitlab_runner--config_path)
 * [`secret_store_path`](#-rootless_gitlab_runner--secret_store_path)
+* [`configuration_file`](#-rootless_gitlab_runner--configuration_file)
+* [`runner_account`](#-rootless_gitlab_runner--runner_account)
 * [`packages`](#-rootless_gitlab_runner--packages)
-* [`manage_apt_repos`](#-rootless_gitlab_runner--manage_apt_repos)
-* [`docker_repo_location`](#-rootless_gitlab_runner--docker_repo_location)
-* [`docker_repo_key_source`](#-rootless_gitlab_runner--docker_repo_key_source)
-* [`gitlab_runner_repo_location`](#-rootless_gitlab_runner--gitlab_runner_repo_location)
-* [`gitlab_runner_repo_key_source`](#-rootless_gitlab_runner--gitlab_runner_repo_key_source)
-* [`manage_runner_user`](#-rootless_gitlab_runner--manage_runner_user)
-* [`subid_start`](#-rootless_gitlab_runner--subid_start)
-* [`subid_count`](#-rootless_gitlab_runner--subid_count)
-* [`manage_rootless_docker`](#-rootless_gitlab_runner--manage_rootless_docker)
-* [`manage_runner_service`](#-rootless_gitlab_runner--manage_runner_service)
-* [`service_environment`](#-rootless_gitlab_runner--service_environment)
-* [`service_timeout_stop_sec`](#-rootless_gitlab_runner--service_timeout_stop_sec)
-* [`manage_standalone_self_update`](#-rootless_gitlab_runner--manage_standalone_self_update)
-* [`repo_path`](#-rootless_gitlab_runner--repo_path)
-* [`repo_branch`](#-rootless_gitlab_runner--repo_branch)
-* [`apply_confdir`](#-rootless_gitlab_runner--apply_confdir)
-* [`apply_vardir`](#-rootless_gitlab_runner--apply_vardir)
-* [`apply_interval`](#-rootless_gitlab_runner--apply_interval)
-* [`apply_timeout`](#-rootless_gitlab_runner--apply_timeout)
-* [`puppet_bindir`](#-rootless_gitlab_runner--puppet_bindir)
-* [`healthcheck_interval`](#-rootless_gitlab_runner--healthcheck_interval)
+* [`rootless_docker`](#-rootless_gitlab_runner--rootless_docker)
+* [`runner_service`](#-rootless_gitlab_runner--runner_service)
+* [`standalone`](#-rootless_gitlab_runner--standalone)
 
 ##### <a name="-rootless_gitlab_runner--concurrent"></a>`concurrent`
 
 Data type: `Integer[1]`
 
-Global `concurrent` value written to the runner config.
-
-Default value: `1`
+Global `concurrent` value written to the runner configuration file: the
+name is GitLab Runner's own `config.toml` global key, written unchanged.
+Default 1.
 
 ##### <a name="-rootless_gitlab_runner--runners"></a>`runners`
 
 Data type: `Array[Hash]`
 
-Ordered list of runner definitions. Each entry is a hash; recognised keys:
+Ordered list of runner definitions, rendered as the `[[runners]]` sections
+of `config.toml`. Each entry is a hash; recognised keys:
 `name`, `url`, `id` (Integer), `executor`, `token_key`, `host`, `image`,
 `privileged` (Boolean), `tls_verify` (Boolean), `socket_mount` (Boolean),
 `volumes` (Array[String]), `security_opt` (Array[String]), `environment`
@@ -134,9 +129,9 @@ Ordered list of runner definitions. Each entry is a hash; recognised keys:
 key `MaxUploadedArchiveSize` (Integer, default 0)),
 `allowed_images` (Array[String]), `allowed_pull_policies` (Array[String]).
 Tokens are merged in from `runner_tokens[token_key]` and must not appear
-here.
-
-Default value: `[]`
+here. `host` is only for an externally managed daemon at a non-derived
+path: where the module manages the runner service, the drop-in's
+`DOCKER_HOST` already points the executor at the derived rootless socket.
 
 ##### <a name="-rootless_gitlab_runner--runner_defaults"></a>`runner_defaults`
 
@@ -145,8 +140,6 @@ Data type: `Hash`
 Hash merged under every `runners` entry (`$runner_defaults + $runner`,
 keys set on the entry win), so multi-runner data does not repeat `url`,
 `image`, `executor` and friends. Recognised keys as in `runners`.
-
-Default value: `{}`
 
 ##### <a name="-rootless_gitlab_runner--runner_tokens"></a>`runner_tokens`
 
@@ -163,277 +156,225 @@ apply fails (typo/missed-provisioning guard). The rendered configuration
 content is `Sensitive` too, so tokens never reach the compiled catalog,
 reports, or `--show_diff` output.
 
-Default value: `Sensitive({})`
-
-##### <a name="-rootless_gitlab_runner--runner_user"></a>`runner_user`
-
-Data type: `Rootless_gitlab_runner::Username`
-
-System user the runner manager and rootless docker run as.
-
-Default value: `'gitlab-runner'`
-
-##### <a name="-rootless_gitlab_runner--runner_uid"></a>`runner_uid`
-
-Data type: `Optional[Integer[1]]`
-
-Numeric uid of the runner user. No default: the uid is host data, not
-something a module can sensibly invent. It derives the rootless runtime
-paths (`/run/user/<uid>`, the docker socket) and is enforced on the user
-when `manage_runner_user` is on; the apply fails loud when it is unset but
-needed — with `manage_runner_user`, `manage_rootless_docker` or
-`manage_standalone_self_update` on, or to derive the docker socket path
-for a `socket_mount` runner.
-
-Default value: `undef`
-
-##### <a name="-rootless_gitlab_runner--runner_home"></a>`runner_home`
-
-Data type: `Stdlib::Absolutepath`
-
-Home directory of the runner user.
-
-Default value: `'/home/gitlab-runner'`
-
-##### <a name="-rootless_gitlab_runner--config_path"></a>`config_path`
-
-Data type: `Stdlib::Absolutepath`
-
-Path of the rendered runner config file. Owner and group derive from
-`runner_user`; the mode is fixed 0600 (the file carries the runner
-tokens).
-
-Default value: `'/etc/gitlab-runner/config.toml'`
-
 ##### <a name="-rootless_gitlab_runner--secret_store_path"></a>`secret_store_path`
 
 Data type: `Stdlib::Absolutepath`
 
-Directory of the off-repo secret store. The directory itself is managed
-(root-owned, 0700); the secret file inside it is host-provisioned and
-never managed.
+Path of the off-repository secret store directory. The directory itself is
+managed (root-owned, 0700); the secret file inside it is host-provisioned
+and never managed. Default `/etc/gitlab-runner-infra`.
 
-Default value: `'/etc/gitlab-runner-infra'`
+##### <a name="-rootless_gitlab_runner--configuration_file"></a>`configuration_file`
+
+Data type:
+
+```puppet
+Struct[{
+    path => Stdlib::Absolutepath,
+  }]
+```
+
+The rendered runner configuration file (GitLab Runner's `config.toml`).
+Owner and group derive from `runner_account.name`; the mode is fixed 0600
+(the file carries the runner tokens).
+
+Options:
+
+* **:path** `Stdlib::Absolutepath`: Where the file is written. Default `/etc/gitlab-runner/config.toml`.
+
+##### <a name="-rootless_gitlab_runner--runner_account"></a>`runner_account`
+
+Data type:
+
+```puppet
+Struct[{
+    manage => Boolean,
+    name   => Rootless_gitlab_runner::Username,
+    uid    => Optional[Integer[1]],
+    home   => Stdlib::Absolutepath,
+  }]
+```
+
+The OS account the runner manager and the rootless docker daemon run as.
+The identity keys are read by every concern even when `manage: false`
+(socket derivation, file ownership, service `ExecStart`); the toggle only
+decides whether the module creates and enforces the group, user, and home.
+
+Options:
+
+* **:manage** `Boolean`: Whether to manage the runner group, user, and home. Keep off where another
+configuration-management system owns the account. The subordinate UID/GID
+ranges rootless docker needs are owned by `rootless_docker.manage`.
+Default false.
+* **:name** `Rootless_gitlab_runner::Username`: Username of the runner account. Default `gitlab-runner`.
+* **:uid** `Optional[Integer[1]]`: Numeric uid of the runner account. No default: the uid is host data, not
+something a module can sensibly invent. It derives the rootless runtime
+paths (`/run/user/<uid>`, the docker socket) and is enforced on the user
+when `runner_account.manage` is on; the apply fails loud when it is unset
+but needed — with `runner_account.manage`, `rootless_docker.manage` or
+`standalone.self_update.manage` on, or to derive the docker socket path
+for a `socket_mount` runner.
+* **:home** `Stdlib::Absolutepath`: Home directory of the runner account. Default `/home/gitlab-runner`.
 
 ##### <a name="-rootless_gitlab_runner--packages"></a>`packages`
 
-Data type: `Array[String[1]]`
+Data type:
 
-Packages to ensure installed. Empty list (the default) installs nothing.
-The apt repositories serving them can be managed via `manage_apt_repos`;
-with that off, repo setup is an external prerequisite.
+```puppet
+Struct[{
+    install => Array[String[1]],
+    sources => Struct[{
+      manage        => Boolean,
+      docker        => Struct[{
+        location   => Stdlib::HTTPUrl,
+        key_source => Stdlib::HTTPUrl,
+      }],
+      gitlab_runner => Struct[{
+        location   => Stdlib::HTTPUrl,
+        key_source => Stdlib::HTTPUrl,
+      }],
+    }],
+  }]
+```
 
-Default value: `[]`
+The apt-packages concern: what to install, and the apt sources serving it.
 
-##### <a name="-rootless_gitlab_runner--manage_apt_repos"></a>`manage_apt_repos`
+Options:
 
-Data type: `Boolean`
+* **:install** `Array[String[1]]`: Packages to ensure installed. The empty default installs nothing. Install
+only: the module never removes packages absent from the list and never
+pins or upgrades.
+* **:sources** `Hash`: The apt sources the `install` list installs from (Docker's and GitLab
+Runner's, via `puppetlabs/apt`). `sources.manage` (default false) decides
+ownership: keep it off where apt sources are owned elsewhere (central
+configuration management, e.g. Foreman/Katello, or a mirror). The
+`docker` and `gitlab_runner` sub-hashes each carry `location` and
+`key_source` — verbatim `apt::source` parameter names — overridden only
+for a mirror; the defaults point at the vendors' repositories and their
+rolling signing-key endpoints.
 
-Whether to manage the apt repositories the `packages` list installs from
-(Docker's and GitLab Runner's, via `puppetlabs/apt`). Keep off where apt
-sources are owned elsewhere (central config management, e.g. Foreman/Katello).
+##### <a name="-rootless_gitlab_runner--rootless_docker"></a>`rootless_docker`
+
+Data type:
+
+```puppet
+Struct[{
+    manage      => Boolean,
+    subid_start => Integer[1],
+    subid_count => Integer[65536],
+  }]
+```
+
+The rootless docker runtime: "rootless mode" is Docker's own name for
+running the daemon unprivileged.
+
+Options:
+
+* **:manage** `Boolean`: Whether to bring up the rootless docker user daemon: provision the
+subordinate UID/GID ranges (an existing entry is never overwritten, and
+the runner account may be owned elsewhere), enable lingering and run
+`dockerd-rootless-setuptool.sh install` (guarded, as the runner user),
+behind a fail-loud preflight that asserts the prerequisites instead of
+half-installing. Also stops and masks the rootful system
+`docker.service`/`docker.socket` and `containerd.service`, which a fresh
+`docker-ce` install starts as root, so the only Docker daemon on the host
+is the unprivileged one. cgroup-v2 controller delegation is deliberately
+not managed (it would be the module's only system-wide write); without it
+CPU/IO job limits are silently unenforced — see the README Limitations.
 Default false.
+* **:subid_start** `Integer[1]`: First subordinate UID/GID allocated to the runner account (field two of
+the `/etc/subuid` entry format, per `subid(5)`). Default 231072.
+* **:subid_count** `Integer[65536]`: Number of subordinate UIDs/GIDs allocated (field three of the entry;
+rootless docker needs at least 65536). Default 165536, which also covers
+BuildKit's rootless image layout.
 
-Default value: `false`
+##### <a name="-rootless_gitlab_runner--runner_service"></a>`runner_service`
 
-##### <a name="-rootless_gitlab_runner--docker_repo_location"></a>`docker_repo_location`
+Data type:
 
-Data type: `Stdlib::HTTPUrl`
+```puppet
+Struct[{
+    manage           => Boolean,
+    environment      => Optional[Array[Pattern[/\A[^\r\n]+\z/]]],
+    timeout_stop_sec => Optional[Variant[Integer[0], String[1]]],
+  }]
+```
 
-Docker apt repository URL (suite = OS codename, component `stable`).
+The systemd system service running the runner manager, privilege-dropped
+to the runner account.
 
-Default value: `'https://download.docker.com/linux/ubuntu'`
+Options:
 
-##### <a name="-rootless_gitlab_runner--docker_repo_key_source"></a>`docker_repo_key_source`
+* **:manage** `Boolean`: Whether to manage the runner system service, its privilege-drop systemd
+drop-in, and the configuration directory's mode so a privilege-dropped
+manager can traverse to its configuration file. Default false.
+* **:environment** `Optional[Array[String]]`: `Environment=` lines (KEY=value) rendered into the service drop-in. When
+unset, defaults to pointing DOCKER_HOST at the rootless docker socket
+derived from `runner_account.uid`. Each line must be a single line — a
+value containing a newline is rejected, so it cannot inject an extra
+systemd directive into the drop-in.
+* **:timeout_stop_sec** `Optional[Variant[Integer[0], String[1]]]`: `TimeoutStopSec=` written into the manager service drop-in — how long
+systemd waits for a graceful drain before escalating to `SIGKILL`. Unset
+by default, so systemd's `DefaultTimeoutStopSec` (typically 90s) applies;
+set it to the longest job a drain should wait for (GitLab's documented
+example is `7200`). Accepts a seconds integer or a systemd time span
+(e.g. `2h`).
 
-Data type: `Stdlib::HTTPUrl`
+##### <a name="-rootless_gitlab_runner--standalone"></a>`standalone`
 
-URL of Docker's armored signing key (stored as an apt keyring).
+Data type:
 
-Default value: `'https://download.docker.com/linux/ubuntu/gpg'`
+```puppet
+Struct[{
+    manage                    => Boolean,
+    control_repository_path   => Stdlib::Absolutepath,
+    control_repository_branch => String[1],
+    puppet_confdir            => Stdlib::Absolutepath,
+    puppet_vardir             => Stdlib::Absolutepath,
+    puppet_bindir             => Stdlib::Absolutepath,
+    healthcheck_interval      => String[1],
+    self_update               => Struct[{
+      manage         => Boolean,
+      apply_interval => String[1],
+      apply_timeout  => String[1],
+    }],
+  }]
+```
 
-##### <a name="-rootless_gitlab_runner--gitlab_runner_repo_location"></a>`gitlab_runner_repo_location`
+The standalone topology: a host that applies itself via `puppet apply`,
+as opposed to a fleet host deployed by a Puppet server — with the
+optional self-update loop nested inside.
 
-Data type: `Stdlib::HTTPUrl`
+Options:
 
-GitLab Runner apt repository URL (suite = OS codename, component `main`).
-
-Default value: `'https://packages.gitlab.com/runner/gitlab-runner/ubuntu'`
-
-##### <a name="-rootless_gitlab_runner--gitlab_runner_repo_key_source"></a>`gitlab_runner_repo_key_source`
-
-Data type: `Stdlib::HTTPUrl`
-
-URL of GitLab Runner's armored signing key (stored as an apt keyring).
-
-Default value: `'https://packages.gitlab.com/runner/gitlab-runner/gpgkey'`
-
-##### <a name="-rootless_gitlab_runner--manage_runner_user"></a>`manage_runner_user`
-
-Data type: `Boolean`
-
-Whether to manage the runner group, user, and home. Keep off where another
-configuration-management system owns the user. The subordinate UID/GID
-ranges rootless docker needs are owned by `manage_rootless_docker`.
-Default false.
-
-Default value: `false`
-
-##### <a name="-rootless_gitlab_runner--subid_start"></a>`subid_start`
-
-Data type: `Integer[1]`
-
-First subordinate UID/GID allocated to the runner user (written by
-`manage_rootless_docker`).
-
-Default value: `231072`
-
-##### <a name="-rootless_gitlab_runner--subid_count"></a>`subid_count`
-
-Data type: `Integer[65536]`
-
-Number of subordinate UIDs/GIDs allocated (rootless docker needs at
-least 65536). The 165536 default fits nested rootless BuildKit builds:
-the rootless BuildKit image maps IDs 100000-165535 inside the build
-container.
-
-Default value: `165536`
-
-##### <a name="-rootless_gitlab_runner--manage_rootless_docker"></a>`manage_rootless_docker`
-
-Data type: `Boolean`
-
-Whether to bring up the rootless docker user daemon: provision the
-subordinate UID/GID ranges (`subid_start`/`subid_count`; an existing entry
-is never overwritten, and the runner user may be owned elsewhere), enable
-lingering and run `dockerd-rootless-setuptool.sh install` (guarded, as the
-runner user), behind a fail-loud preflight that asserts the prerequisites
-instead of half-installing. Also stops and masks the rootful system
-`docker.service`/`docker.socket`, which a fresh `docker-ce` install starts
-as root, so the only Docker daemon on the host is the unprivileged one.
-cgroup-v2 controller delegation is deliberately not managed
-(it would be the module's only system-wide write); without it CPU/IO job
-limits are silently unenforced — see the README Limitations. Default false.
-
-Default value: `false`
-
-##### <a name="-rootless_gitlab_runner--manage_runner_service"></a>`manage_runner_service`
-
-Data type: `Boolean`
-
-Whether to manage the runner system service, its privilege-drop systemd
-drop-in, and the config directory's mode so a privilege-dropped manager can
-traverse to its config. The manager always runs privilege-dropped as
-`runner_user`. Default false.
-
-Default value: `false`
-
-##### <a name="-rootless_gitlab_runner--service_environment"></a>`service_environment`
-
-Data type: `Optional[Array[Pattern[/\A[^\r\n]+\z/]]]`
-
-Environment lines (KEY=value) rendered into the service drop-in. When
-unset, defaults to pointing DOCKER_HOST at the rootless docker socket. Each
-line must be a single line — a value containing a newline is rejected, so it
-cannot inject an extra systemd directive into the drop-in.
-
-Default value: `undef`
-
-##### <a name="-rootless_gitlab_runner--service_timeout_stop_sec"></a>`service_timeout_stop_sec`
-
-Data type: `Optional[Variant[Integer[0], String[1]]]`
-
-`TimeoutStopSec=` written into the manager service drop-in — how long
-systemd waits for a graceful drain before escalating to `SIGKILL`. Unset by
-default, so systemd's `DefaultTimeoutStopSec` (typically 90s) applies; set
-it to the longest job a drain should wait for (GitLab's documented example
-is `7200`). Accepts a seconds integer or a systemd time span (e.g. `2h`).
-
-Default value: `undef`
-
-##### <a name="-rootless_gitlab_runner--manage_standalone_self_update"></a>`manage_standalone_self_update`
-
-Data type: `Boolean`
-
-Whether to install the standalone self-update loop: an apply script, a
-oneshot service + timer that fetch the control repo, verify the commit
-signature, reset to the remote branch, run `r10k puppetfile install` and
-re-apply — plus a healthcheck script + timer (manager service, rootless
-docker daemon health as the runner user, checkout SHA staleness). Never
-enable this where a Puppet server/r10k already deploys the host. Default
-false.
-
-Default value: `false`
-
-##### <a name="-rootless_gitlab_runner--repo_path"></a>`repo_path`
-
-Data type: `Stdlib::Absolutepath`
-
-Root-owned checkout of the control repository the self-update loop
-applies. The apply's manifest, module directory and Hiera configuration
-derive strictly from the documented layout beneath it
+* **:manage** `Boolean`: Declares the host standalone: installs the apply script
+(`/usr/local/sbin/rootless-gitlab-runner-apply`), the single definition
+of the apply command for timer-driven and manual runs. Default false.
+* **:control_repository_path** `Stdlib::Absolutepath`: Root-owned checkout of the control repository on the host (the apply and
+self-update target). The apply's manifest, module directory and Hiera
+configuration derive strictly from the documented layout beneath it
 (`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml`).
-
-Default value: `'/opt/gitlab-runner-infra'`
-
-##### <a name="-rootless_gitlab_runner--repo_branch"></a>`repo_branch`
-
-Data type: `String[1]`
-
-Branch the self-update loop follows (protected, signed).
-
-Default value: `'main'`
-
-##### <a name="-rootless_gitlab_runner--apply_confdir"></a>`apply_confdir`
-
-Data type: `Stdlib::Absolutepath`
-
-Isolated Puppet confdir for the apply (never the central agent's).
-
-Default value: `'/etc/gitlab-runner-infra/puppet'`
-
-##### <a name="-rootless_gitlab_runner--apply_vardir"></a>`apply_vardir`
-
-Data type: `Stdlib::Absolutepath`
-
-Isolated Puppet vardir for the apply (never the central agent's).
-
-Default value: `'/var/lib/grunner-puppet'`
-
-##### <a name="-rootless_gitlab_runner--apply_interval"></a>`apply_interval`
-
-Data type: `String[1]`
-
-systemd time span between self-update runs.
-
-Default value: `'5min'`
-
-##### <a name="-rootless_gitlab_runner--apply_timeout"></a>`apply_timeout`
-
-Data type: `String[1]`
-
-TimeoutStartSec of the apply service (a oneshot unit has no default start
-timeout).
-
-Default value: `'15min'`
-
-##### <a name="-rootless_gitlab_runner--puppet_bindir"></a>`puppet_bindir`
-
-Data type: `Stdlib::Absolutepath`
-
-Directory holding the `puppet` (and typically `r10k`) executables,
+Default `/opt/gitlab-runner-infra`.
+* **:control_repository_branch** `String[1]`: Branch the self-update loop follows (protected, signed). Default `main`.
+* **:puppet_confdir** `Stdlib::Absolutepath`: Isolated Puppet confdir for the apply — never the central agent's.
+Default `/etc/gitlab-runner-infra/puppet`.
+* **:puppet_vardir** `Stdlib::Absolutepath`: Isolated Puppet vardir for the apply — never the central agent's.
+Default `/var/lib/grunner-puppet`.
+* **:puppet_bindir** `Stdlib::Absolutepath`: Directory holding the `puppet` (and typically `r10k`) executables,
 prepended to the self-update service's PATH so the timer-driven,
-non-login apply can find them. Override for a non-standard install.
-
-Default value: `'/opt/puppetlabs/bin'`
-
-##### <a name="-rootless_gitlab_runner--healthcheck_interval"></a>`healthcheck_interval`
-
-Data type: `String[1]`
-
-systemd time span between healthcheck runs.
-
-Default value: `'15min'`
+non-login apply can find them. Default `/opt/puppetlabs/bin`; the
+AIO-reuse topology sets `/opt/puppetlabs/puppet/bin` (gem executables
+live there, not in the symlink farm).
+* **:healthcheck_interval** `String[1]`: systemd time span between healthcheck runs. Default `15min`.
+* **:self_update** `Hash`: The self-update loop: `manage` (default false) installs a oneshot
+service + timer that fetch the control repository, verify the commit
+signature, reset to the remote branch, run `r10k puppetfile install` and
+re-apply — plus the healthcheck script + timer. Only valid on a
+standalone host: enabling it with `standalone.manage` off fails at
+compile time. Never enable it where a Puppet server or r10k already
+deploys the host. `apply_interval` (default `5min`) is the timer's
+cadence; `apply_timeout` (default `15min`) the apply service's
+`TimeoutStartSec=` (a oneshot unit has no default start timeout).
 
 ## Functions
 

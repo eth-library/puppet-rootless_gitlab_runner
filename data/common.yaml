@@ -1,9 +1,102 @@
 ---
-# Force the runner-token store to Sensitive on automatic parameter lookup, so a
-# plain-YAML or hiera-eyaml secret store is wrapped without the consumer typing
-# anything special. convert_to wraps the whole hash (=> Sensitive[Hash]); the
-# module unwraps it once when rendering and re-wraps the rendered config as
-# Sensitive, so tokens stay out of the catalog, reports, and diffs.
+# Module data layer: the complete default surface. Every parameter default
+# lives here (the class signature carries only the types), so consumer data
+# holds nothing but deviations: Hiera's automatic parameter lookup finds these
+# values in the module layer whenever no consumer layer overrides them.
+#
+# lookup_options:
+# - runner_tokens is forced to Sensitive on lookup, so a plain-YAML or
+#   hiera-eyaml secret store is wrapped without the consumer typing anything
+#   special. convert_to wraps the whole hash (=> Sensitive[Hash]); the module
+#   unwraps it once when rendering and re-wraps the rendered configuration as
+#   Sensitive, so tokens stay out of the catalog, reports, and diffs.
+# - every struct parameter merges deep, so Hiera layers can each own different
+#   subkeys and a consumer hash contains only its deviations. A scalar subkey
+#   set at a higher-priority layer wins and hashes merge recursively; array
+#   subkeys union across layers, and an element prefixed with '--' (the
+#   knockout prefix) removes the matching element a lower layer contributed.
+#   Removing a whole subkey through data is not expressible: override it with
+#   the intended value instead.
 lookup_options:
   rootless_gitlab_runner::runner_tokens:
     convert_to: 'Sensitive'
+  rootless_gitlab_runner::configuration_file:
+    merge:
+      strategy: deep
+      knockout_prefix: '--'
+  rootless_gitlab_runner::runner_account:
+    merge:
+      strategy: deep
+      knockout_prefix: '--'
+  rootless_gitlab_runner::packages:
+    merge:
+      strategy: deep
+      knockout_prefix: '--'
+  rootless_gitlab_runner::rootless_docker:
+    merge:
+      strategy: deep
+      knockout_prefix: '--'
+  rootless_gitlab_runner::runner_service:
+    merge:
+      strategy: deep
+      knockout_prefix: '--'
+  rootless_gitlab_runner::standalone:
+    merge:
+      strategy: deep
+      knockout_prefix: '--'
+
+# ── the runner configuration: config.toml content ──
+rootless_gitlab_runner::concurrent: 1
+rootless_gitlab_runner::runners: []
+rootless_gitlab_runner::runner_defaults: {}
+rootless_gitlab_runner::runner_tokens: {}
+
+# ── …its secrets source, and the rendered artifact ──
+rootless_gitlab_runner::secret_store_path: '/etc/gitlab-runner-infra'
+rootless_gitlab_runner::configuration_file:
+  path: '/etc/gitlab-runner/config.toml'
+
+# ── the runner account (identity read by every concern; manage = create/enforce it) ──
+rootless_gitlab_runner::runner_account:
+  manage: false
+  name: 'gitlab-runner'
+  uid: ~
+  home: '/home/gitlab-runner'
+
+# ── packages and where they install from ──
+rootless_gitlab_runner::packages:
+  install: []
+  sources:
+    manage: false
+    docker:
+      location: 'https://download.docker.com/linux/ubuntu'
+      key_source: 'https://download.docker.com/linux/ubuntu/gpg'
+    gitlab_runner:
+      location: 'https://packages.gitlab.com/runner/gitlab-runner/ubuntu'
+      key_source: 'https://packages.gitlab.com/runner/gitlab-runner/gpgkey'
+
+# ── rootless docker runtime ──
+rootless_gitlab_runner::rootless_docker:
+  manage: false
+  subid_start: 231072
+  subid_count: 165536
+
+# ── runner manager service ──
+rootless_gitlab_runner::runner_service:
+  manage: false
+  environment: ~
+  timeout_stop_sec: ~
+
+# ── standalone topology, with the optional self-update loop inside ──
+rootless_gitlab_runner::standalone:
+  manage: false
+  control_repository_path: '/opt/gitlab-runner-infra'
+  control_repository_branch: 'main'
+  puppet_confdir: '/etc/gitlab-runner-infra/puppet'
+  puppet_vardir: '/var/lib/grunner-puppet'
+  puppet_bindir: '/opt/puppetlabs/bin'
+  healthcheck_interval: '15min'
+  self_update:
+    manage: false
+    apply_interval: '5min'
+    apply_timeout: '15min'

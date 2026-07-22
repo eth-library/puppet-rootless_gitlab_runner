@@ -7,11 +7,18 @@ require 'yaml'
 # fact source, not a hand-maintained hash), so the fact set follows metadata.
 UBUNTU_FACTS = on_supported_os.values.first.freeze
 
+# Every parameter default lives in the module data layer; rspec params are
+# resource-style and bypass Hiera's deep merge, so struct params built here
+# merge their overrides over the module defaults the same way Hiera would.
+MODULE_DATA = YAML.safe_load(
+  File.read(File.expand_path(File.join(__dir__, '..', '..', 'data', 'common.yaml'))),
+).freeze
+
 describe 'rootless_gitlab_runner' do
   # config.toml content is Sensitive (it carries tokens); unwrap it for byte
   # and pattern assertions.
-  def rendered_config
-    content = catalogue.resource('File', '/etc/gitlab-runner/config.toml')[:content]
+  def rendered_config(path = '/etc/gitlab-runner/config.toml')
+    content = catalogue.resource('File', path)[:content]
     content.respond_to?(:unwrap) ? content.unwrap : content
   end
 
@@ -26,13 +33,26 @@ describe 'rootless_gitlab_runner' do
     YAML.safe_load(File.read(File.expand_path(File.join(__dir__, '..', '..', 'examples', *path))))
   end
 
-  # The example common + node data as class params (module prefix stripped).
-  def example_data_params
-    prefix = 'rootless_gitlab_runner::'
-    [example_yaml('data', 'common.yaml'), example_yaml('data', 'nodes', 'host.example.yaml')]
-      .reduce(:merge)
-      .select { |k, _| k.start_with?(prefix) }
-      .transform_keys { |k| k.delete_prefix(prefix) }
+  def deep_merge(base, override)
+    base.merge(override) do |_k, old, new|
+      old.is_a?(Hash) && new.is_a?(Hash) ? deep_merge(old, new) : new
+    end
+  end
+
+  # rspec-puppet serializes a Ruby nil param value as the literal string
+  # "nil"; a YAML `~` default must reach Puppet as undef instead.
+  def undefize(value)
+    case value
+    when Hash then value.transform_values { |v| undefize(v) }
+    when nil then :undef
+    else value
+    end
+  end
+
+  # A struct parameter's module-data default with overrides merged deep over
+  # it, mirroring the deep-merge lookup_options a Hiera consumer gets.
+  def struct_param(name, overrides = {})
+    undefize(deep_merge(MODULE_DATA.fetch("rootless_gitlab_runner::#{name}"), overrides))
   end
 
   context 'with defaults' do
@@ -66,7 +86,7 @@ describe 'rootless_gitlab_runner' do
         .that_requires('File[/home/gitlab-runner/.config/systemd/user/docker.service.d]')
     end
 
-    it 'manages the runner config owned by the runner user, fixed mode 0600' do
+    it 'manages the runner configuration file owned by the runner account, fixed mode 0600' do
       is_expected.to contain_file('/etc/gitlab-runner/config.toml').with(
         'ensure' => 'file',
         'owner'  => 'gitlab-runner',
@@ -104,6 +124,7 @@ describe 'rootless_gitlab_runner' do
       is_expected.not_to contain_service('docker.service')
       is_expected.not_to contain_service('docker.socket')
       is_expected.not_to contain_service('containerd.service')
+      is_expected.not_to contain_file('/usr/local/sbin/rootless-gitlab-runner-apply')
       is_expected.not_to contain_file('/etc/systemd/system/gitlab-runner-apply.timer')
       # No user-scoped docker restart where the module does not own the daemon.
       is_expected.not_to contain_exec('rootless_gitlab_runner docker daemon-reload (no-detach-netns)')
@@ -119,11 +140,29 @@ describe 'rootless_gitlab_runner' do
     end
   end
 
-  context 'with manage_apt_repos' do
+  context 'with an unknown struct subkey' do
+    let(:params) { { 'runner_account' => struct_param('runner_account', 'nmae' => 'typo') } }
+
+    it 'fails the compile naming the unrecognised key' do
+      is_expected.to compile.and_raise_error(%r{runner_account.*nmae}m)
+    end
+  end
+
+  context 'with an unknown nested struct subkey' do
+    let(:params) do
+      { 'packages' => struct_param('packages', 'sources' => { 'dokcer' => { 'location' => 'https://x/' } }) }
+    end
+
+    it 'fails the compile naming the unrecognised key' do
+      is_expected.to compile.and_raise_error(%r{packages.*dokcer}m)
+    end
+  end
+
+  context 'with packages.sources.manage' do
     # puppetlabs-apt compiles only on Debian-family facts; the suite otherwise
     # runs factless, so this context pins the supported OS fact set (reused).
     let(:facts) { UBUNTU_FACTS }
-    let(:params) { { 'manage_apt_repos' => true } }
+    let(:params) { { 'packages' => struct_param('packages', 'sources' => { 'manage' => true }) } }
 
     it { is_expected.to compile.with_all_deps }
 
@@ -193,14 +232,17 @@ describe 'rootless_gitlab_runner' do
         .without_checksum
     end
 
-    context 'with custom repo locations and key sources' do
+    context 'with mirror locations and key sources' do
       let(:params) do
-        super().merge(
-          'docker_repo_location'          => 'https://mirror.example.org/docker/ubuntu',
-          'docker_repo_key_source'        => 'https://mirror.example.org/docker/gpg',
-          'gitlab_runner_repo_location'   => 'https://mirror.example.org/runner/ubuntu',
-          'gitlab_runner_repo_key_source' => 'https://mirror.example.org/runner/gpgkey',
-        )
+        {
+          'packages' => struct_param('packages', 'sources' => {
+            'manage'        => true,
+            'docker'        => { 'location'   => 'https://mirror.example.org/docker/ubuntu',
+                                 'key_source' => 'https://mirror.example.org/docker/gpg' },
+            'gitlab_runner' => { 'location'   => 'https://mirror.example.org/runner/ubuntu',
+                                 'key_source' => 'https://mirror.example.org/runner/gpgkey' },
+          }),
+        }
       end
 
       it 'threads the overrides into the sources and keyring refreshes' do
@@ -217,45 +259,38 @@ describe 'rootless_gitlab_runner' do
   end
 
   # Drift gates: the committed examples must keep compiling against the real
-  # parameter surface — a renamed or removed parameter fails here, not in a
-  # consumer's first apply.
-  context 'examples/data stays compilable' do
+  # parameter surface, resolved through Hiera itself (automatic parameter
+  # lookup + the module's deep-merge lookup_options) — the consumption path a
+  # control repository uses, which resource-style params would bypass.
+  context 'examples/data resolves through Hiera' do
     let(:facts) { UBUNTU_FACTS }
-    let(:params) { example_data_params }
-
-    it { is_expected.to compile.with_all_deps }
-  end
-
-  context 'examples/data with examples/secrets.example.yaml resolves tokens' do
-    let(:facts) { UBUNTU_FACTS }
-    let(:params) do
-      tokens = example_yaml('secrets.example.yaml')['rootless_gitlab_runner::runner_tokens']
-      example_data_params.merge('runner_tokens' => sensitive(tokens))
-    end
+    let(:hiera_config) { File.expand_path(File.join(__dir__, '..', 'fixtures', 'hiera', 'examples.yaml')) }
 
     it { is_expected.to compile.with_all_deps }
 
-    it 'renders the referenced runner token into the config' do
-      expect(rendered_config).to match(%r{glrt-REPLACE-WITH-RUNNER-TOKEN})
-    end
-  end
-
-  # The lookup leg of the Sensitive contract: a plain-YAML (unwrapped) secret
-  # store resolved through Hiera is wrapped by the module's convert_to lookup
-  # rule — without the rule on exactly this key, the typed parameter rejects
-  # the bare hash and compilation fails.
-  context 'with a plain-YAML token store resolved through Hiera' do
-    let(:hiera_config) { File.expand_path(File.join(__dir__, '..', 'fixtures', 'hiera', 'plain_token_store.yaml')) }
-
-    it { is_expected.to compile.with_all_deps }
-
-    it 'wraps the plain store Sensitive on lookup and renders the referenced token' do
-      expect(rendered_config).to match(%r{glrt-PLAIN-STORE-TOKEN})
+    it 'deep-merges the partial example structs over the module defaults' do
+      # The example node sets only sources.manage; the vendor locations come
+      # from the module data layer underneath.
+      is_expected.to contain_apt__source('docker').with_location('https://download.docker.com/linux/ubuntu')
+      # The example sets only manage + uid on runner_account; name and home
+      # come from the module defaults.
+      is_expected.to contain_user('gitlab-runner').with('uid' => 2000, 'home' => '/home/gitlab-runner')
     end
 
-    it 'keeps the rendered configuration content Sensitive with a populated store' do
-      expect(catalogue.resource('File', '/etc/gitlab-runner/config.toml').sensitive_parameters)
-        .to include(:content)
+    it 'installs the apply script for the declared-standalone example host' do
+      is_expected.to contain_file('/usr/local/sbin/rootless-gitlab-runner-apply')
+        .with_content(%r{"/opt/runner-infra/puppet/manifests/site\.pp"})
+    end
+
+    context 'with examples/secrets.example.yaml tokens' do
+      let(:params) do
+        tokens = example_yaml('secrets.example.yaml')['rootless_gitlab_runner::runner_tokens']
+        { 'runner_tokens' => sensitive(tokens) }
+      end
+
+      it 'renders the referenced runner token into the configuration' do
+        expect(rendered_config).to match(%r{glrt-REPLACE-WITH-RUNNER-TOKEN})
+      end
     end
   end
 
@@ -266,12 +301,7 @@ describe 'rootless_gitlab_runner' do
   # other key, so a stale example would teach consumers an inert key.
   context 'examples/data keys match the declared parameter surface' do
     let(:facts) { UBUNTU_FACTS }
-    # Compiled with the example data itself: a stray key in the two skeleton
-    # files aborts the compile outright ("no parameter named ..."), and every
-    # accepted key lands in the class resource's parameter set. The catalog
-    # omits parameters left at an undef default, so the walk below compares
-    # against the compiled set, which includes every key the examples set.
-    let(:params) { example_data_params }
+    let(:hiera_config) { File.expand_path(File.join(__dir__, '..', 'fixtures', 'hiera', 'examples.yaml')) }
 
     it 'declares every rootless_gitlab_runner:: key set under examples/data' do
       declared = catalogue.resource('Class', 'rootless_gitlab_runner').parameters.keys.map(&:to_s)
@@ -286,19 +316,74 @@ describe 'rootless_gitlab_runner' do
     end
   end
 
+  # The deep-merge contract end to end, through a consumer-shaped hierarchy:
+  # partial consumer hashes pick up the rest of each struct from the module
+  # data layer; a scalar subkey set higher in the hierarchy wins; the knockout
+  # prefix removes a subkey a lower layer set; and a plain-YAML token store is
+  # wrapped Sensitive by the module's convert_to rule.
+  context 'a partial consumer hash through a Hiera hierarchy' do
+    let(:node) { 'deep-merge.example.org' }
+    let(:hiera_config) { File.expand_path(File.join(__dir__, '..', 'fixtures', 'hiera', 'deep_merge.yaml')) }
+
+    it { is_expected.to compile.with_all_deps }
+
+    it 'fills the unset struct subkeys from the module defaults' do
+      # The consumer layer sets only rootless_docker.manage and the account
+      # uid: the subid range comes from the module defaults (231072 wide
+      # 165536), the account name from the module default.
+      is_expected.to contain_exec('rootless_gitlab_runner subuid entry')
+        .with_command('usermod --add-subuids 231072-396607 gitlab-runner')
+    end
+
+    it 'lets the node layer override a common-layer scalar subkey' do
+      # The common layer sets uid 2000; the node layer's 4242 wins.
+      is_expected.to contain_exec('rootless_gitlab_runner await user session')
+        .with_unless('test -S /run/user/4242/bus')
+    end
+
+    it 'unions array subkeys across layers and removes an element via the knockout prefix' do
+      # environment is set in both layers: the common layer's DOCKER_HOST line
+      # survives the merge (arrays union under deep merge), while the node
+      # layer's '--DEBUG=1' knocks the common DEBUG=1 element out.
+      is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
+        .with_content(%r{^Environment=DOCKER_HOST=unix:///run/user/2000/docker\.sock$})
+        .without_content(%r{DEBUG=1})
+    end
+
+    it 'wraps a plain-YAML token store Sensitive on lookup and renders the token' do
+      expect(catalogue.resource('File', '/etc/gitlab-runner/config.toml').sensitive_parameters)
+        .to include(:content)
+      expect(rendered_config).to match(%r{token = "glrt-DEEP-MERGE-TOKEN"})
+    end
+  end
+
   context 'with packages listed' do
-    let(:params) { { 'packages' => %w[uidmap dbus-user-session] } }
+    let(:params) { { 'packages' => struct_param('packages', 'install' => %w[uidmap dbus-user-session]) } }
 
     it { is_expected.to contain_package('uidmap').with_ensure('installed') }
     it { is_expected.to contain_package('dbus-user-session').with_ensure('installed') }
   end
 
-  context 'without runner_uid' do
-    %w[manage_runner_user manage_rootless_docker manage_standalone_self_update].each do |toggle|
-      context "with #{toggle} enabled" do
-        let(:params) { { toggle => true } }
+  context 'with self_update.manage but standalone.manage off' do
+    let(:params) do
+      { 'standalone' => struct_param('standalone', 'self_update' => { 'manage' => true }) }
+    end
 
-        it { is_expected.to compile.and_raise_error(%r{runner_uid must be set}) }
+    it 'fails the compile: the loop is contained in the standalone topology' do
+      is_expected.to compile.and_raise_error(%r{standalone\.self_update\.manage requires\s+standalone\.manage})
+    end
+  end
+
+  context 'without runner_account.uid' do
+    {
+      'runner_account.manage'  => { 'runner_account' => { 'manage' => true } },
+      'rootless_docker.manage' => { 'rootless_docker' => { 'manage' => true } },
+      'self_update.manage'     => { 'standalone' => { 'manage' => true, 'self_update' => { 'manage' => true } } },
+    }.each do |toggle, overrides|
+      context "with #{toggle} enabled" do
+        let(:params) { overrides.to_h { |name, over| [name, struct_param(name, over)] } }
+
+        it { is_expected.to compile.and_raise_error(%r{runner_account\.uid must be set}) }
       end
     end
 
@@ -308,11 +393,11 @@ describe 'rootless_gitlab_runner' do
                           'image' => 'i', 'socket_mount' => true }] }
       end
 
-      it { is_expected.to compile.and_raise_error(%r{set runner_uid}) }
+      it { is_expected.to compile.and_raise_error(%r{set runner_account\.uid}) }
     end
 
-    context 'with a privilege-dropped service and no derivable DOCKER_HOST' do
-      let(:params) { { 'manage_runner_service' => true } }
+    context 'with the runner service and no derivable DOCKER_HOST' do
+      let(:params) { { 'runner_service' => struct_param('runner_service', 'manage' => true) } }
 
       it { is_expected.to compile.and_raise_error(%r{needs DOCKER_HOST}) }
     end
@@ -347,8 +432,8 @@ describe 'rootless_gitlab_runner' do
     end
   end
 
-  context 'with manage_runner_user' do
-    let(:params) { { 'manage_runner_user' => true, 'runner_uid' => 4242 } }
+  context 'with runner_account.manage' do
+    let(:params) { { 'runner_account' => struct_param('runner_account', 'manage' => true, 'uid' => 4242) } }
 
     it { is_expected.to compile.with_all_deps }
     it { is_expected.to contain_group('gitlab-runner').with('ensure' => 'present', 'system' => true) }
@@ -364,14 +449,17 @@ describe 'rootless_gitlab_runner' do
     end
 
     %w[subuid subgid].each do |f|
-      it "writes no #{f} entry (subids belong to manage_rootless_docker)" do
+      it "writes no #{f} entry (subids belong to rootless_docker.manage)" do
         is_expected.not_to contain_exec("rootless_gitlab_runner #{f} entry")
       end
     end
   end
 
-  context 'with manage_rootless_docker' do
-    let(:params) { { 'manage_rootless_docker' => true, 'runner_uid' => 4242 } }
+  context 'with rootless_docker.manage' do
+    let(:params) do
+      { 'rootless_docker' => struct_param('rootless_docker', 'manage' => true),
+        'runner_account'  => struct_param('runner_account', 'uid' => 4242) }
+    end
 
     it { is_expected.to compile.with_all_deps }
 
@@ -382,8 +470,9 @@ describe 'rootless_gitlab_runner' do
       )
     end
 
-    # manage_runner_user stays off here, so this is the externally-owned-user
-    # shape: the module provisions subids without owning the account.
+    # runner_account.manage stays off here, so this is the externally-owned
+    # account shape: the module provisions subids without owning the account.
+    # The range is the module default: start 231072, width 165536.
     { 'subuid' => '--add-subuids', 'subgid' => '--add-subgids' }.each do |f, flag|
       it "provisions the #{f} range for the (possibly external) runner user, guarded by an existing entry" do
         is_expected.to contain_exec("rootless_gitlab_runner #{f} entry").with(
@@ -473,10 +562,11 @@ describe 'rootless_gitlab_runner' do
     end
   end
 
-  context 'with manage_rootless_docker and manage_runner_user and a custom subid range' do
+  context 'with rootless_docker.manage, runner_account.manage and a custom subid range' do
     let(:params) do
-      { 'manage_rootless_docker' => true, 'manage_runner_user' => true,
-        'runner_uid' => 4242, 'subid_start' => 300_000, 'subid_count' => 131_072 }
+      { 'rootless_docker' => struct_param('rootless_docker', 'manage' => true,
+                                                            'subid_start' => 300_000, 'subid_count' => 131_072),
+        'runner_account'  => struct_param('runner_account', 'manage' => true, 'uid' => 4242) }
     end
 
     it { is_expected.to compile.with_all_deps }
@@ -495,17 +585,17 @@ describe 'rootless_gitlab_runner' do
   # (`command -v`, `which`, `type`) on a missing binary, unlike bash's 1.
   # Guards must test host state (`test`, `grep`) and exit 0/1 only.
   context 'exec guard hygiene (all toggles on)' do
-    # Facts pinned so manage_apt_repos (puppetlabs-apt needs Debian-family
-    # facts) can join the sweep and its keyring-refresh guards are covered.
+    # Facts pinned so packages.sources.manage (puppetlabs-apt needs
+    # Debian-family facts) can join the sweep and its keyring-refresh guards
+    # are covered.
     let(:facts) { UBUNTU_FACTS }
     let(:params) do
       {
-        'manage_runner_user'            => true,
-        'manage_rootless_docker'        => true,
-        'manage_runner_service'         => true,
-        'manage_standalone_self_update' => true,
-        'manage_apt_repos'              => true,
-        'runner_uid'                    => 4242,
+        'runner_account'  => struct_param('runner_account', 'manage' => true, 'uid' => 4242),
+        'rootless_docker' => struct_param('rootless_docker', 'manage' => true),
+        'runner_service'  => struct_param('runner_service', 'manage' => true),
+        'packages'        => struct_param('packages', 'sources' => { 'manage' => true }),
+        'standalone'      => struct_param('standalone', 'manage' => true, 'self_update' => { 'manage' => true }),
       }
     end
 
@@ -521,8 +611,11 @@ describe 'rootless_gitlab_runner' do
     end
   end
 
-  context 'with manage_runner_service' do
-    let(:params) { { 'manage_runner_service' => true, 'runner_uid' => 4242 } }
+  context 'with runner_service.manage' do
+    let(:params) do
+      { 'runner_service' => struct_param('runner_service', 'manage' => true),
+        'runner_account' => struct_param('runner_account', 'uid' => 4242) }
+    end
 
     it { is_expected.to compile.with_all_deps }
     it { is_expected.to contain_service('gitlab-runner').with('ensure' => 'running', 'enable' => true) }
@@ -536,7 +629,7 @@ describe 'rootless_gitlab_runner' do
       )
     end
 
-    it 'owns .runner_system_id as the service user so the dropped manager can read the root-created file' do
+    it 'owns .runner_system_id as the runner account so the dropped manager can read the root-created file' do
       is_expected.to contain_file('/etc/gitlab-runner/.runner_system_id').with(
         'ensure' => 'file',
         'owner'  => 'gitlab-runner',
@@ -566,7 +659,10 @@ describe 'rootless_gitlab_runner' do
     end
 
     context 'with a stop timeout for long drains' do
-      let(:params) { super().merge('service_timeout_stop_sec' => 7200) }
+      let(:params) do
+        super().merge('runner_service' => struct_param('runner_service', 'manage' => true,
+                                                                         'timeout_stop_sec' => 7200))
+      end
 
       it 'renders the configured TimeoutStopSec and keeps the fixed KillSignal' do
         is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
@@ -577,37 +673,36 @@ describe 'rootless_gitlab_runner' do
   end
 
   # The ownership-derivation contract (the 1.x latent wrong-owner bug): a
-  # non-default runner user and home must flow into every derived resource —
+  # non-default account name and home must flow into every derived resource —
   # file ownership, the drop-in path, the service ExecStart, the socket path.
-  context 'with a non-default runner user and home' do
+  context 'with a non-default runner account name and home' do
     let(:params) do
       {
-        'runner_user'           => 'ci-worker',
-        'runner_uid'            => 5000,
-        'runner_home'           => '/srv/ci-worker',
-        'manage_runner_service' => true,
+        'runner_account' => struct_param('runner_account',
+                                         'name' => 'ci-worker', 'uid' => 5000, 'home' => '/srv/ci-worker'),
+        'runner_service' => struct_param('runner_service', 'manage' => true),
       }
     end
 
     it { is_expected.to compile.with_all_deps }
 
-    it 'derives the config file ownership from the runner user' do
+    it 'derives the configuration file ownership from the account name' do
       is_expected.to contain_file('/etc/gitlab-runner/config.toml')
         .with('owner' => 'ci-worker', 'group' => 'ci-worker')
     end
 
-    it 'derives the config directory group and system-id ownership from the runner user' do
+    it 'derives the configuration directory group and system-id ownership from the account name' do
       is_expected.to contain_file('/etc/gitlab-runner').with('group' => 'ci-worker')
       is_expected.to contain_file('/etc/gitlab-runner/.runner_system_id')
         .with('owner' => 'ci-worker', 'group' => 'ci-worker')
     end
 
-    it 'derives the no-detach-netns drop-in path and ownership from the runner home and user' do
+    it 'derives the no-detach-netns drop-in path and ownership from the account home and name' do
       is_expected.to contain_file('/srv/ci-worker/.config/systemd/user/docker.service.d/no-detach-netns.conf')
         .with('owner' => 'ci-worker', 'group' => 'ci-worker')
     end
 
-    it 'derives the privilege drop, working directory and socket from the runner identity' do
+    it 'derives the privilege drop, working directory and socket from the account' do
       is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
         .with_content(%r{^User=ci-worker$})
         .with_content(%r{^ExecStart=/usr/bin/gitlab-runner run --working-directory /srv/ci-worker --config /etc/gitlab-runner/config\.toml --service gitlab-runner$})
@@ -615,8 +710,42 @@ describe 'rootless_gitlab_runner' do
     end
   end
 
-  context 'with manage_standalone_self_update' do
-    let(:params) { { 'manage_standalone_self_update' => true, 'runner_uid' => 4242 } }
+  context 'with standalone.manage alone (no self-update loop)' do
+    let(:params) do
+      { 'standalone' => struct_param('standalone', 'manage' => true,
+                                                   'control_repository_path' => '/opt/infra') }
+    end
+
+    it { is_expected.to compile.with_all_deps }
+
+    it 'installs the apply script with every path derived from the control repository layout' do
+      is_expected.to contain_file('/usr/local/sbin/rootless-gitlab-runner-apply')
+        .with_mode('0755')
+        .with_content(%r{r10k puppetfile install})
+        .with_content(%r{--puppetfile "/opt/infra/Puppetfile"})
+        .with_content(%r{--moduledir "/opt/infra/puppet/modules"})
+        .with_content(%r{--modulepath "/opt/infra/puppet/modules"})
+        .with_content(%r{--hiera_config "/opt/infra/puppet/hiera\.yaml"})
+        .with_content(%r{--confdir "/etc/gitlab-runner-infra/puppet"})
+        .with_content(%r{--vardir "/var/lib/grunner-puppet"})
+        .with_content(%r{--detailed-exitcodes})
+        .with_content(%r{"/opt/infra/puppet/manifests/site\.pp"})
+    end
+
+    it 'installs no self-update units and no healthcheck without the loop' do
+      is_expected.not_to contain_file('/usr/local/sbin/rootless-gitlab-runner-healthcheck')
+      is_expected.not_to contain_file('/etc/systemd/system/gitlab-runner-apply.service')
+      is_expected.not_to contain_file('/etc/systemd/system/gitlab-runner-apply.timer')
+      is_expected.not_to contain_service('gitlab-runner-apply.timer')
+      is_expected.not_to contain_exec('rootless_gitlab_runner daemon-reload (self-update)')
+    end
+  end
+
+  context 'with standalone.self_update.manage' do
+    let(:params) do
+      { 'standalone'     => struct_param('standalone', 'manage' => true, 'self_update' => { 'manage' => true }),
+        'runner_account' => struct_param('runner_account', 'uid' => 4242) }
+    end
 
     it { is_expected.to compile.with_all_deps }
 
@@ -628,19 +757,6 @@ describe 'rootless_gitlab_runner' do
         .with_content(%r{--vardir "/var/lib/grunner-puppet"})
         .with_content(%r{--detailed-exitcodes})
         .with_content(%r{"/opt/gitlab-runner-infra/puppet/manifests/site\.pp"})
-    end
-
-    context 'with a non-default repo_path' do
-      let(:params) { super().merge('repo_path' => '/opt/infra') }
-
-      it 'derives every apply path from the control repository layout' do
-        is_expected.to contain_file('/usr/local/sbin/rootless-gitlab-runner-apply')
-          .with_content(%r{--puppetfile "/opt/infra/Puppetfile"})
-          .with_content(%r{--moduledir "/opt/infra/puppet/modules"})
-          .with_content(%r{--modulepath "/opt/infra/puppet/modules"})
-          .with_content(%r{--hiera_config "/opt/infra/puppet/hiera\.yaml"})
-          .with_content(%r{"/opt/infra/puppet/manifests/site\.pp"})
-      end
     end
 
     it 'renders the apply service: HOME=/root, PATH to the AIO bindir, timeout, verify-commit, exit 2 = success' do
@@ -697,6 +813,32 @@ describe 'rootless_gitlab_runner' do
           .that_subscribes_to("File[/etc/systemd/system/#{t}]")
       end
     end
+
+    context 'with a non-default branch and intervals' do
+      let(:params) do
+        super().merge('standalone' => struct_param('standalone',
+                                                   'manage'                    => true,
+                                                   'control_repository_branch' => 'deploy',
+                                                   'healthcheck_interval'      => '30min',
+                                                   'self_update'               => {
+                                                     'manage'         => true,
+                                                     'apply_interval' => '10min',
+                                                     'apply_timeout'  => '20min',
+                                                   }))
+      end
+
+      it 'threads the overrides into the units and the healthcheck' do
+        is_expected.to contain_file('/etc/systemd/system/gitlab-runner-apply.service')
+          .with_content(%r{verify-commit origin/deploy$})
+          .with_content(%r{^TimeoutStartSec=20min$})
+        is_expected.to contain_file('/etc/systemd/system/gitlab-runner-apply.timer')
+          .with_content(%r{^OnUnitActiveSec=10min$})
+        is_expected.to contain_file('/etc/systemd/system/gitlab-runner-healthcheck.timer')
+          .with_content(%r{^OnUnitActiveSec=30min$})
+        expect(rendered_file('/usr/local/sbin/rootless-gitlab-runner-healthcheck'))
+          .to match(%r{ls-remote origin 'refs/heads/deploy'})
+      end
+    end
   end
 
   context 'private classes' do
@@ -740,16 +882,16 @@ describe 'rootless_gitlab_runner' do
   context 'golden file: full two-runner config' do
     let(:params) do
       {
-        'runner_uid'    => 4242,
-        'runner_tokens' => sensitive({ 'runner_a' => 'glrt-GOLDEN-TOKEN-A',
-                                       'runner_b' => 'glrt-GOLDEN-TOKEN-B' }),
+        'runner_account' => struct_param('runner_account', 'uid' => 4242),
+        'runner_tokens'  => sensitive({ 'runner_a' => 'glrt-GOLDEN-TOKEN-A',
+                                        'runner_b' => 'glrt-GOLDEN-TOKEN-B' }),
         # url + executor deliberately live in runner_defaults: the golden file
         # must render byte-identical, proving the merge changes nothing.
         'runner_defaults' => { 'url' => 'https://gitlab.example.org/', 'executor' => 'docker' },
         # Every documented runner key set to a non-default value across the two
         # runners, so a mutation to any exercised template line (e.g. hard-wiring
         # privileged to false) breaks the byte-exact render.
-        'runners'       => [
+        'runners' => [
           {
             'name'                         => 'socket-runner',
             'id'                           => 42,
@@ -790,7 +932,10 @@ describe 'rootless_gitlab_runner' do
   end
 
   context 'rendered shell scripts (golden + shellcheck)' do
-    let(:params) { { 'manage_standalone_self_update' => true, 'runner_uid' => 4242 } }
+    let(:params) do
+      { 'standalone'     => struct_param('standalone', 'manage' => true, 'self_update' => { 'manage' => true }),
+        'runner_account' => struct_param('runner_account', 'uid' => 4242) }
+    end
 
     {
       '/usr/local/sbin/rootless-gitlab-runner-apply'       => 'apply.sh.golden',
@@ -842,22 +987,23 @@ describe 'rootless_gitlab_runner' do
       end
     end
 
-    context 'a runner_user with shell-hostile characters' do
-      let(:params) { { 'runner_user' => 'ev il"; rm -rf' } }
+    context 'a runner account name with shell-hostile characters' do
+      let(:params) { { 'runner_account' => struct_param('runner_account', 'name' => 'ev il"; rm -rf') } }
 
-      it { is_expected.to compile.and_raise_error(%r{runner_user}) }
+      it { is_expected.to compile.and_raise_error(%r{runner_account}) }
     end
 
-    context 'a service_environment line containing a newline' do
+    context 'a runner_service.environment line containing a newline' do
       let(:params) do
         {
-          'manage_runner_service' => true,
-          'runner_uid'            => 2000,
-          'service_environment'   => ["DOCKER_HOST=unix:///run/x\nExecStartPre=/bin/evil"],
+          'runner_service' => struct_param('runner_service',
+                                           'manage'      => true,
+                                           'environment' => ["DOCKER_HOST=unix:///run/x\nExecStartPre=/bin/evil"]),
+          'runner_account' => struct_param('runner_account', 'uid' => 2000),
         }
       end
 
-      it { is_expected.to compile.and_raise_error(%r{service_environment}) }
+      it { is_expected.to compile.and_raise_error(%r{runner_service}) }
     end
   end
 end

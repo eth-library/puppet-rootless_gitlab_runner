@@ -1,6 +1,6 @@
 <%- | String $apply_script,
-      String $repo_path,
-      String $repo_branch,
+      String $control_repository_path,
+      String $control_repository_branch,
       String $apply_timeout,
       String $puppet_bindir,
 | -%>
@@ -23,10 +23,10 @@ Environment="PATH=<%= $puppet_bindir %>:/usr/bin:/bin"
 # A oneshot unit has no default start timeout; without this a hung fetch would
 # wedge silently.
 TimeoutStartSec=<%= $apply_timeout %>
-ExecStartPre=/usr/bin/git -C <%= $repo_path %> fetch --quiet origin <%= $repo_branch %>
+ExecStartPre=/usr/bin/git -C <%= $control_repository_path %> fetch --quiet origin <%= $control_repository_branch %>
 # Only apply commits carrying a valid signature (protected, signed main).
-ExecStartPre=/usr/bin/git -C <%= $repo_path %> verify-commit origin/<%= $repo_branch %>
-ExecStartPre=/usr/bin/git -C <%= $repo_path %> reset --hard --quiet origin/<%= $repo_branch %>
+ExecStartPre=/usr/bin/git -C <%= $control_repository_path %> verify-commit origin/<%= $control_repository_branch %>
+ExecStartPre=/usr/bin/git -C <%= $control_repository_path %> reset --hard --quiet origin/<%= $control_repository_branch %>
 ExecStart=<%= $apply_script %>
 # puppet apply --detailed-exitcodes returns 2 when changes were applied; that
 # is a successful run, not a failure.
