@@ -294,7 +294,7 @@ never managed, beyond the no-detach-netns drop-in the module places under
 `~/.config/systemd/user/`.
 
 `group` names the account's primary group and defaults to `name`. Set it for an externally
-provisioned account whose primary group is named differently (account `ci-worker`, group `ci`):
+provisioned account whose primary group is named differently (e.g. account `ci-worker`, group `ci`):
 it feeds every group ownership the module manages — the group resource and the user's primary
 group where `manage` is on, and the group of the runner configuration file, its directory, and
 the account's systemd user tree — so the first apply converges instead of failing to resolve a

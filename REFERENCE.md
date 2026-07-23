@@ -213,7 +213,7 @@ Default false.
 * **:group** `Optional[Rootless_gitlab_runner::Username]`: Name of the account's primary group. Defaults to the account name (the
 data layer cannot express that default, so an unset key falls back to
 `name` in code). Set it for an externally provisioned account whose primary
-group is named differently (account `ci-worker`, group `ci`): it feeds
+group is named differently (e.g. account `ci-worker`, group `ci`): it feeds
 every group ownership the module manages — the group resource and the
 user's primary group where `manage` is on, and the group of the runner
 configuration file, its directory, and the account's systemd user tree.
