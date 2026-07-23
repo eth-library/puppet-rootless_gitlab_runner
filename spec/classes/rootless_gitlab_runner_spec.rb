@@ -1,5 +1,6 @@
 require 'spec_helper'
 require 'yaml'
+require 'deep_merge'
 
 # puppetlabs-apt compiles only on Debian-family facts; the suite otherwise runs
 # factless, so the apt-enabled and example contexts pin the single supported
@@ -15,28 +16,21 @@ MODULE_DATA = YAML.safe_load(
 ).freeze
 
 describe 'rootless_gitlab_runner' do
-  # config.toml content is Sensitive (it carries tokens); unwrap it for byte
-  # and pattern assertions.
-  def rendered_config(path = '/etc/gitlab-runner/config.toml')
-    content = catalogue.resource('File', path)[:content]
-    content.respond_to?(:unwrap) ? content.unwrap : content
-  end
-
   # The rendered content of any managed File resource (unwrapped if Sensitive).
   def rendered_file(path)
     content = catalogue.resource('File', path)[:content]
     content.respond_to?(:unwrap) ? content.unwrap : content
   end
 
+  # config.toml content is Sensitive (it carries tokens); rendered_file unwraps
+  # it for byte and pattern assertions. The path is the module default.
+  def rendered_config
+    rendered_file('/etc/gitlab-runner/config.toml')
+  end
+
   # Load and parse a YAML file from examples/.
   def example_yaml(*path)
     YAML.safe_load(File.read(File.expand_path(File.join(__dir__, '..', '..', 'examples', *path))))
-  end
-
-  def deep_merge(base, override)
-    base.merge(override) do |_k, old, new|
-      old.is_a?(Hash) && new.is_a?(Hash) ? deep_merge(old, new) : new
-    end
   end
 
   # rspec-puppet serializes a Ruby nil param value as the literal string
@@ -50,9 +44,22 @@ describe 'rootless_gitlab_runner' do
   end
 
   # A struct parameter's module-data default with overrides merged deep over
-  # it, mirroring the deep-merge lookup_options a Hiera consumer gets.
+  # it, mirroring the deep-merge lookup_options a Hiera consumer gets (strategy:
+  # deep, knockout_prefix: '--'): scalars from the override win, sub-hashes
+  # merge recursively, arrays union across layers, and a '--'-prefixed element
+  # knocks the matching one out. Uses the same deep_merge gem Hiera's deep
+  # strategy is built on, so struct_param merges the way Hiera would rather than
+  # replacing whole arrays. Both operands are deep-copied first: deep_merge!
+  # mutates its destination, and MODULE_DATA must stay pristine across calls.
   def struct_param(name, overrides = {})
-    undefize(deep_merge(MODULE_DATA.fetch("rootless_gitlab_runner::#{name}"), overrides))
+    base = Marshal.load(Marshal.dump(MODULE_DATA.fetch("rootless_gitlab_runner::#{name}")))
+    undefize(DeepMerge.deep_merge!(Marshal.load(Marshal.dump(overrides)), base, knockout_prefix: '--'))
+  end
+
+  # The common runner_account shape: a derivable uid (the socket path derives
+  # from it) plus any extra keys. Most contexts need only the uid.
+  def account_with_uid(uid, extra = {})
+    struct_param('runner_account', { 'uid' => uid }.merge(extra))
   end
 
   context 'with defaults' do
@@ -433,7 +440,7 @@ describe 'rootless_gitlab_runner' do
   end
 
   context 'with runner_account.manage' do
-    let(:params) { { 'runner_account' => struct_param('runner_account', 'manage' => true, 'uid' => 4242) } }
+    let(:params) { { 'runner_account' => account_with_uid(4242, 'manage' => true) } }
 
     it { is_expected.to compile.with_all_deps }
     it { is_expected.to contain_group('gitlab-runner').with('ensure' => 'present', 'system' => true) }
@@ -461,7 +468,7 @@ describe 'rootless_gitlab_runner' do
   # it as the user's primary group instead of a same-named group.
   context 'with runner_account.manage and a differently named primary group' do
     let(:params) do
-      { 'runner_account' => struct_param('runner_account', 'manage' => true, 'uid' => 4242, 'group' => 'ci') }
+      { 'runner_account' => account_with_uid(4242, 'manage' => true, 'group' => 'ci') }
     end
 
     it { is_expected.to compile.with_all_deps }
@@ -476,7 +483,7 @@ describe 'rootless_gitlab_runner' do
   context 'with rootless_docker.manage' do
     let(:params) do
       { 'rootless_docker' => struct_param('rootless_docker', 'manage' => true),
-        'runner_account'  => struct_param('runner_account', 'uid' => 4242) }
+        'runner_account'  => account_with_uid(4242) }
     end
 
     it { is_expected.to compile.with_all_deps }
@@ -584,7 +591,7 @@ describe 'rootless_gitlab_runner' do
     let(:params) do
       { 'rootless_docker' => struct_param('rootless_docker', 'manage' => true,
                                                             'subid_start' => 300_000, 'subid_count' => 131_072),
-        'runner_account'  => struct_param('runner_account', 'manage' => true, 'uid' => 4242) }
+        'runner_account'  => account_with_uid(4242, 'manage' => true) }
     end
 
     it { is_expected.to compile.with_all_deps }
@@ -609,7 +616,7 @@ describe 'rootless_gitlab_runner' do
     let(:facts) { UBUNTU_FACTS }
     let(:params) do
       {
-        'runner_account'  => struct_param('runner_account', 'manage' => true, 'uid' => 4242),
+        'runner_account'  => account_with_uid(4242, 'manage' => true),
         'rootless_docker' => struct_param('rootless_docker', 'manage' => true),
         'runner_service'  => struct_param('runner_service', 'manage' => true),
         'packages'        => struct_param('packages', 'sources' => { 'manage' => true }),
@@ -632,7 +639,7 @@ describe 'rootless_gitlab_runner' do
   context 'with runner_service.manage' do
     let(:params) do
       { 'runner_service' => struct_param('runner_service', 'manage' => true),
-        'runner_account' => struct_param('runner_account', 'uid' => 4242) }
+        'runner_account' => account_with_uid(4242) }
     end
 
     it { is_expected.to compile.with_all_deps }
@@ -696,8 +703,7 @@ describe 'rootless_gitlab_runner' do
   context 'with a non-default runner account name and home' do
     let(:params) do
       {
-        'runner_account' => struct_param('runner_account',
-                                         'name' => 'ci-worker', 'uid' => 5000, 'home' => '/srv/ci-worker'),
+        'runner_account' => account_with_uid(5000, 'name' => 'ci-worker', 'home' => '/srv/ci-worker'),
         'runner_service' => struct_param('runner_service', 'manage' => true),
       }
     end
@@ -733,9 +739,8 @@ describe 'rootless_gitlab_runner' do
     # fails to resolve a group that does not exist.
     context 'with a differently named primary group' do
       let(:params) do
-        super().merge('runner_account' => struct_param('runner_account',
-                                                       'name' => 'ci-worker', 'uid' => 5000,
-                                                       'home' => '/srv/ci-worker', 'group' => 'ci'))
+        super().merge('runner_account' => account_with_uid(5000, 'name' => 'ci-worker',
+                                                                 'home' => '/srv/ci-worker', 'group' => 'ci'))
       end
 
       it { is_expected.to compile.with_all_deps }
@@ -788,7 +793,7 @@ describe 'rootless_gitlab_runner' do
   context 'with standalone.self_update.manage' do
     let(:params) do
       { 'standalone'     => struct_param('standalone', 'manage' => true, 'self_update' => { 'manage' => true }),
-        'runner_account' => struct_param('runner_account', 'uid' => 4242) }
+        'runner_account' => account_with_uid(4242) }
     end
 
     it { is_expected.to compile.with_all_deps }
@@ -926,7 +931,7 @@ describe 'rootless_gitlab_runner' do
   context 'golden file: full two-runner config' do
     let(:params) do
       {
-        'runner_account' => struct_param('runner_account', 'uid' => 4242),
+        'runner_account' => account_with_uid(4242),
         'runner_tokens'  => sensitive({ 'runner_a' => 'glrt-GOLDEN-TOKEN-A',
                                         'runner_b' => 'glrt-GOLDEN-TOKEN-B' }),
         # url + executor deliberately live in runner_defaults: the golden file
@@ -978,7 +983,7 @@ describe 'rootless_gitlab_runner' do
   context 'rendered shell scripts (golden + shellcheck)' do
     let(:params) do
       { 'standalone'     => struct_param('standalone', 'manage' => true, 'self_update' => { 'manage' => true }),
-        'runner_account' => struct_param('runner_account', 'uid' => 4242) }
+        'runner_account' => account_with_uid(4242) }
     end
 
     {
@@ -1043,7 +1048,7 @@ describe 'rootless_gitlab_runner' do
           'runner_service' => struct_param('runner_service',
                                            'manage'      => true,
                                            'environment' => ["DOCKER_HOST=unix:///run/x\nExecStartPre=/bin/evil"]),
-          'runner_account' => struct_param('runner_account', 'uid' => 2000),
+          'runner_account' => account_with_uid(2000),
         }
       end
 

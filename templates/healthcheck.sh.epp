@@ -3,7 +3,11 @@
       String $socket_path,
       String $control_repository_path,
       String $control_repository_branch,
+      String $service_name,
 | -%>
+<%# The manager-service check below asserts the packaged gitlab-runner systemd
+    unit: $service_name is the unit name the gitlab-runner package defines,
+    threaded in from the manifest rather than restated here. Not rendered. -%>
 #!/usr/bin/env bash
 #
 # Managed by Puppet (rootless_gitlab_runner). Do not edit by hand — this file
@@ -30,8 +34,8 @@ as_runner() {
     "$@"
 }
 
-systemctl is-active --quiet 'gitlab-runner' \
-  || err "manager service 'gitlab-runner' is not active"
+systemctl is-active --quiet '<%= $service_name %>' \
+  || err "manager service '<%= $service_name %>' is not active"
 
 # The apply timer drives self-update; a disabled or stopped timer silently
 # halts convergence and would otherwise surface only later as checkout

@@ -1,4 +1,4 @@
-<%- | String $control_repository_path,
+<%- | String $puppetfile_path,
       String $manifest_path,
       String $module_directory,
       String $hiera_config,
@@ -25,9 +25,9 @@ fi
 
 # Deliver module updates pinned in the consumer's Puppetfile each tick.
 # Without a Puppetfile (module vendored in the checkout) this is a no-op.
-if [[ -f "<%= $control_repository_path %>/Puppetfile" ]]; then
+if [[ -f "<%= $puppetfile_path %>" ]]; then
   r10k puppetfile install \
-    --puppetfile "<%= $control_repository_path %>/Puppetfile" \
+    --puppetfile "<%= $puppetfile_path %>" \
     --moduledir "<%= $module_directory %>"
 fi
 

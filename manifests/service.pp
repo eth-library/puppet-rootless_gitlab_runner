@@ -8,7 +8,7 @@ class rootless_gitlab_runner::service {
   # as root would contradict the module's identity — and the service name is
   # the package-defined unit, not configuration.
   if $rootless_gitlab_runner::runner_service['manage'] {
-    $service_name       = 'gitlab-runner'
+    $service_name       = $rootless_gitlab_runner::service_name
     $service_dropin_dir = "/etc/systemd/system/${service_name}.service.d"
 
     file { $service_dropin_dir:
@@ -34,8 +34,8 @@ class rootless_gitlab_runner::service {
       group   => 'root',
       mode    => '0644',
       content => epp('rootless_gitlab_runner/service-dropin.conf.epp', {
-        'runner_name'             => $rootless_gitlab_runner::runner_account['name'],
-        'runner_home'             => $rootless_gitlab_runner::runner_account['home'],
+        'runner_name'             => $rootless_gitlab_runner::runner_name,
+        'runner_home'             => $rootless_gitlab_runner::runner_home,
         'configuration_file_path' => $rootless_gitlab_runner::configuration_file['path'],
         'environment'             => $rootless_gitlab_runner::real_service_environment,
         'timeout_stop_sec'        => $rootless_gitlab_runner::runner_service['timeout_stop_sec'],

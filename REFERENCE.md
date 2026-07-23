@@ -26,6 +26,7 @@
 
 ### Data types
 
+* [`Rootless_gitlab_runner::Apt_source`](#Rootless_gitlab_runner--Apt_source): An apt source's location and signing-key endpoint.
 * [`Rootless_gitlab_runner::Username`](#Rootless_gitlab_runner--Username): A strict POSIX-portable Linux username.
 
 ## Classes
@@ -234,14 +235,8 @@ Struct[{
     install => Array[String[1]],
     sources => Struct[{
       manage        => Boolean,
-      docker        => Struct[{
-        location   => Stdlib::HTTPUrl,
-        key_source => Stdlib::HTTPUrl,
-      }],
-      gitlab_runner => Struct[{
-        location   => Stdlib::HTTPUrl,
-        key_source => Stdlib::HTTPUrl,
-      }],
+      docker        => Rootless_gitlab_runner::Apt_source,
+      gitlab_runner => Rootless_gitlab_runner::Apt_source,
     }],
   }]
 ```
@@ -253,7 +248,7 @@ Options:
 * **:install** `Array[String[1]]`: Packages to ensure installed. The empty default installs nothing. Install
 only: the module never removes packages absent from the list and never
 pins or upgrades.
-* **:sources** `Hash`: The apt sources the `install` list installs from (Docker's and GitLab
+* **:sources** `Struct[{ manage => Boolean, docker => Apt_source, gitlab_runner => Apt_source }]`: The apt sources the `install` list installs from (Docker's and GitLab
 Runner's, via `puppetlabs/apt`). `sources.manage` (default false) decides
 ownership: keep it off where apt sources are owned elsewhere (central
 configuration management, e.g. Foreman/Katello, or a mirror). The
@@ -317,11 +312,11 @@ Options:
 * **:manage** `Boolean`: Whether to manage the runner system service, its privilege-drop systemd
 drop-in, and the configuration directory's mode so a privilege-dropped
 manager can traverse to its configuration file. Default false.
-* **:environment** `Optional[Array[String]]`: `Environment=` lines (KEY=value) rendered into the service drop-in. When
+* **:environment** `Optional[Array[Pattern[/\A[^\r\n]+\z/]]]`: `Environment=` lines (KEY=value) rendered into the service drop-in. When
 unset, defaults to pointing DOCKER_HOST at the rootless docker socket
-derived from `runner_account.uid`. Each line must be a single line — a
-value containing a newline is rejected, so it cannot inject an extra
-systemd directive into the drop-in.
+derived from `runner_account.uid`. The `Pattern` enforces the type: each
+line must be non-empty and single-line — a value containing a newline is
+rejected, so it cannot inject an extra systemd directive into the drop-in.
 * **:timeout_stop_sec** `Optional[Variant[Integer[0], String[1]]]`: `TimeoutStopSec=` written into the manager service drop-in — how long
 systemd waits for a graceful drain before escalating to `SIGKILL`. Unset
 by default, so systemd's `DefaultTimeoutStopSec` (typically 90s) applies;
@@ -360,10 +355,11 @@ Options:
 (`/usr/local/sbin/rootless-gitlab-runner-apply`), the single definition
 of the apply command for timer-driven and manual runs. Default false.
 * **:control_repository_path** `Stdlib::Absolutepath`: Root-owned checkout of the control repository on the host (the apply and
-self-update target). The apply's manifest, module directory and Hiera
-configuration derive strictly from the documented layout beneath it
-(`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml`).
-Default `/opt/gitlab-runner-infra`.
+self-update target). The apply's manifest, module directory, Hiera
+configuration and optional `Puppetfile` derive strictly from the documented
+layout beneath it (`puppet/manifests/site.pp`, `puppet/modules`,
+`puppet/hiera.yaml`, and `Puppetfile` at the root — r10k installs it each
+tick when present). Default `/opt/gitlab-runner-infra`.
 * **:control_repository_branch** `String[1]`: Branch the self-update loop follows (protected, signed). Default `main`.
 * **:puppet_confdir** `Stdlib::Absolutepath`: Isolated Puppet confdir for the apply — never the central agent's.
 Default `/etc/gitlab-runner-infra/puppet`.
@@ -375,7 +371,7 @@ non-login apply can find them. Default `/opt/puppetlabs/bin`; the
 AIO-reuse topology sets `/opt/puppetlabs/puppet/bin` (gem executables
 live there, not in the symlink farm).
 * **:healthcheck_interval** `String[1]`: systemd time span between healthcheck runs. Default `15min`.
-* **:self_update** `Hash`: The self-update loop: `manage` (default false) installs a oneshot
+* **:self_update** `Struct[{ manage => Boolean, apply_interval => String[1], apply_timeout => String[1] }]`: The self-update loop: `manage` (default false) installs a oneshot
 service + timer that fetch the control repository, verify the commit
 signature, reset to the remote branch, run `r10k puppetfile install` and
 re-apply — plus the healthcheck script + timer. Only valid on a
@@ -426,6 +422,23 @@ Data type: `String`
 the raw string to escape
 
 ## Data types
+
+### <a name="Rootless_gitlab_runner--Apt_source"></a>`Rootless_gitlab_runner::Apt_source`
+
+`location` and `key_source` are verbatim `apt::source` parameter names: the
+repository URL (suite = OS codename) and the URL of its armored signing key,
+stored as an apt keyring. Both the Docker and GitLab Runner sources under
+`packages.sources` share this shape, pointing at a vendor repository or a
+mirror.
+
+Alias of
+
+```puppet
+Struct[{
+  location   => Stdlib::HTTPUrl,
+  key_source => Stdlib::HTTPUrl,
+}]
+```
 
 ### <a name="Rootless_gitlab_runner--Username"></a>`Rootless_gitlab_runner::Username`
 

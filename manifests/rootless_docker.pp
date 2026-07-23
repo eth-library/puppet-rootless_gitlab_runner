@@ -4,8 +4,8 @@ class rootless_gitlab_runner::rootless_docker {
   assert_private()
 
   if $rootless_gitlab_runner::rootless_docker['manage'] {
-    $runner_user = $rootless_gitlab_runner::runner_account['name']
-    $runner_home = $rootless_gitlab_runner::runner_account['home']
+    $runner_user = $rootless_gitlab_runner::runner_name
+    $runner_home = $rootless_gitlab_runner::runner_home
     $runner_uid  = $rootless_gitlab_runner::runner_account['uid']
     $runtime_dir = $rootless_gitlab_runner::runtime_dir
     $user_env    = $rootless_gitlab_runner::runner_user_env
@@ -13,6 +13,8 @@ class rootless_gitlab_runner::rootless_docker {
     # defines; if it is absent the install exec below fails loud (a missing
     # command is a command failure, not a guard failure).
     $setuptool   = '/usr/bin/dockerd-rootless-setuptool.sh'
+    # The user unit the setuptool generates, under the shared systemd user dir.
+    $docker_user_unit = "${rootless_gitlab_runner::user_systemd_dir}/docker.service"
 
     # A fresh docker-ce install leaves the rootful system daemon running: the
     # package postinst starts docker.service + docker.socket as root, and
@@ -128,8 +130,8 @@ class rootless_gitlab_runner::rootless_docker {
     # success. Assert the user unit exists after install, turning a silent skip
     # into a hard failure.
     exec { 'rootless_gitlab_runner setuptool install':
-      command     => "${setuptool} install && test -f ${runner_home}/.config/systemd/user/docker.service",
-      creates     => "${runner_home}/.config/systemd/user/docker.service",
+      command     => "${setuptool} install && test -f ${docker_user_unit}",
+      creates     => $docker_user_unit,
       user        => $runner_user,
       environment => $user_env,
       path        => ['/usr/bin', '/bin'],

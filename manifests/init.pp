@@ -134,7 +134,7 @@
 #   Packages to ensure installed. The empty default installs nothing. Install
 #   only: the module never removes packages absent from the list and never
 #   pins or upgrades.
-# @option packages [Hash] :sources
+# @option packages [Struct[{ manage => Boolean, docker => Apt_source, gitlab_runner => Apt_source }]] :sources
 #   The apt sources the `install` list installs from (Docker's and GitLab
 #   Runner's, via `puppetlabs/apt`). `sources.manage` (default false) decides
 #   ownership: keep it off where apt sources are owned elsewhere (central
@@ -173,12 +173,12 @@
 #   Whether to manage the runner system service, its privilege-drop systemd
 #   drop-in, and the configuration directory's mode so a privilege-dropped
 #   manager can traverse to its configuration file. Default false.
-# @option runner_service [Optional[Array[String]]] :environment
+# @option runner_service [Optional[Array[Pattern[/\A[^\r\n]+\z/]]]] :environment
 #   `Environment=` lines (KEY=value) rendered into the service drop-in. When
 #   unset, defaults to pointing DOCKER_HOST at the rootless docker socket
-#   derived from `runner_account.uid`. Each line must be a single line — a
-#   value containing a newline is rejected, so it cannot inject an extra
-#   systemd directive into the drop-in.
+#   derived from `runner_account.uid`. The `Pattern` enforces the type: each
+#   line must be non-empty and single-line — a value containing a newline is
+#   rejected, so it cannot inject an extra systemd directive into the drop-in.
 # @option runner_service [Optional[Variant[Integer[0], String[1]]]] :timeout_stop_sec
 #   `TimeoutStopSec=` written into the manager service drop-in — how long
 #   systemd waits for a graceful drain before escalating to `SIGKILL`. Unset
@@ -196,10 +196,11 @@
 #   of the apply command for timer-driven and manual runs. Default false.
 # @option standalone [Stdlib::Absolutepath] :control_repository_path
 #   Root-owned checkout of the control repository on the host (the apply and
-#   self-update target). The apply's manifest, module directory and Hiera
-#   configuration derive strictly from the documented layout beneath it
-#   (`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml`).
-#   Default `/opt/gitlab-runner-infra`.
+#   self-update target). The apply's manifest, module directory, Hiera
+#   configuration and optional `Puppetfile` derive strictly from the documented
+#   layout beneath it (`puppet/manifests/site.pp`, `puppet/modules`,
+#   `puppet/hiera.yaml`, and `Puppetfile` at the root — r10k installs it each
+#   tick when present). Default `/opt/gitlab-runner-infra`.
 # @option standalone [String[1]] :control_repository_branch
 #   Branch the self-update loop follows (protected, signed). Default `main`.
 # @option standalone [Stdlib::Absolutepath] :puppet_confdir
@@ -216,7 +217,7 @@
 #   live there, not in the symlink farm).
 # @option standalone [String[1]] :healthcheck_interval
 #   systemd time span between healthcheck runs. Default `15min`.
-# @option standalone [Hash] :self_update
+# @option standalone [Struct[{ manage => Boolean, apply_interval => String[1], apply_timeout => String[1] }]] :self_update
 #   The self-update loop: `manage` (default false) installs a oneshot
 #   service + timer that fetch the control repository, verify the commit
 #   signature, reset to the remote branch, run `r10k puppetfile install` and
@@ -246,14 +247,8 @@ class rootless_gitlab_runner (
     install => Array[String[1]],
     sources => Struct[{
       manage        => Boolean,
-      docker        => Struct[{
-        location   => Stdlib::HTTPUrl,
-        key_source => Stdlib::HTTPUrl,
-      }],
-      gitlab_runner => Struct[{
-        location   => Stdlib::HTTPUrl,
-        key_source => Stdlib::HTTPUrl,
-      }],
+      docker        => Rootless_gitlab_runner::Apt_source,
+      gitlab_runner => Rootless_gitlab_runner::Apt_source,
     }],
   }]                               $packages,
   Struct[{
@@ -301,22 +296,28 @@ class rootless_gitlab_runner (
     ]))
   }
 
-  # The account's primary group, derived once and read as a group by every
-  # concern (the group resource and the user's gid in user.pp, and every
-  # managed file's group in config.pp). The data layer cannot express "same as
-  # the account name", so the default is an absent key and the fallback lives
-  # here: an unset group follows the account name — correct by construction
-  # where the module creates the account — while a set group names the
-  # differently named primary group of an externally provisioned account.
-  $runner_group = pick($runner_account['group'], $runner_account['name'])
+  # The runner account's identity, hoisted once so every concern reads a local
+  # instead of re-subscripting runner_account per file. The primary group is
+  # read as a group everywhere the account name used to double as one (the
+  # group resource and the user's gid in user.pp, every managed file's group in
+  # config.pp); it defaults to the account name, since the data layer cannot
+  # express "same as the name" — an unset group falls back here, correct by
+  # construction where the module creates the account, while a set group names
+  # the differently named primary group of an externally provisioned account.
+  $runner_name  = $runner_account['name']
+  $runner_home  = $runner_account['home']
+  $runner_group = pick($runner_account['group'], $runner_name)
 
   # Defaults merged under every runner entry; keys set on the entry win.
   $effective_runners = $runners.map |$r| { $runner_defaults + $r }
 
   # Rootless runtime paths derived from the uid where known: the module
   # itself installs the daemon socket at /run/user/<uid>/docker.sock, so the
-  # path is derivation, not configuration. An exotic external socket is
-  # expressible via runner_service.environment.
+  # path is derivation, not configuration. The one escape hatch is narrow:
+  # runner_service.environment can point the manager service's DOCKER_HOST at
+  # a socket elsewhere. Nothing else follows it — the socket_mount volume and
+  # the healthcheck probe keep using the derived path — so it is not a general
+  # "external daemon" switch.
   if $runner_account['uid'] =~ Integer {
     $runtime_dir = "/run/user/${runner_account['uid']}"
     $socket_path = "${runtime_dir}/docker.sock"
@@ -329,8 +330,8 @@ class rootless_gitlab_runner (
   # root Puppet provides neither XDG_RUNTIME_DIR nor DBUS_SESSION_BUS_ADDRESS,
   # and systemctl --user / the setuptool fail without them.
   $runner_user_env = [
-    "HOME=${runner_account['home']}",
-    "USER=${runner_account['name']}",
+    "HOME=${runner_home}",
+    "USER=${runner_name}",
     "XDG_RUNTIME_DIR=${runtime_dir}",
     "DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime_dir}/bus",
   ]
@@ -342,6 +343,11 @@ class rootless_gitlab_runner (
     ]))
   }
 
+  # The inner `undef => []` arm (environment unset and no derivable socket) is
+  # reached only when runner_service.manage is off: the fail-loud guard above
+  # rejects that exact combination while the service is managed. So [] is the
+  # never-consumed value that keeps the selector total — service.pp renders the
+  # drop-in only under manage — not a deliberately empty Environment.
   $real_service_environment = $runner_service['environment'] ? {
     undef   => $socket_path ? {
       undef   => [],
@@ -349,6 +355,21 @@ class rootless_gitlab_runner (
     },
     default => $runner_service['environment'],
   }
+
+  # The runner manager's systemd unit name is the one the gitlab-runner package
+  # defines, not configuration. Derived once and shared by the service class
+  # and the healthcheck so the literal has a single home.
+  $service_name = 'gitlab-runner'
+
+  # The runner account's systemd user unit directory (~/.config/systemd/user)
+  # and its parents, built bottom-up from the home so each directory is its
+  # parent plus one path element (no dirname() walk back up). Puppet's file
+  # type never creates parents, so config.pp manages the whole chain to place
+  # the no-detach-netns drop-in; rootless_docker.pp reads $user_systemd_dir for
+  # the docker.service the setuptool generates there.
+  $user_config_dir         = "${runner_home}/.config"
+  $user_config_systemd_dir = "${user_config_dir}/systemd"
+  $user_systemd_dir        = "${user_config_systemd_dir}/user"
 
   contain rootless_gitlab_runner::apt_repos
   contain rootless_gitlab_runner::packages

@@ -20,12 +20,12 @@ class rootless_gitlab_runner::self_update {
       group   => 'root',
       mode    => '0755',
       content => epp('rootless_gitlab_runner/apply.sh.epp', {
-        'control_repository_path' => $control_repository_path,
-        'manifest_path'           => "${control_repository_path}/puppet/manifests/site.pp",
-        'module_directory'        => "${control_repository_path}/puppet/modules",
-        'hiera_config'            => "${control_repository_path}/puppet/hiera.yaml",
-        'confdir'                 => $standalone['puppet_confdir'],
-        'vardir'                  => $standalone['puppet_vardir'],
+        'puppetfile_path'  => "${control_repository_path}/Puppetfile",
+        'manifest_path'    => "${control_repository_path}/puppet/manifests/site.pp",
+        'module_directory' => "${control_repository_path}/puppet/modules",
+        'hiera_config'     => "${control_repository_path}/puppet/hiera.yaml",
+        'confdir'          => $standalone['puppet_confdir'],
+        'vardir'           => $standalone['puppet_vardir'],
       }),
     }
   }
@@ -49,11 +49,12 @@ class rootless_gitlab_runner::self_update {
       group   => 'root',
       mode    => '0755',
       content => epp('rootless_gitlab_runner/healthcheck.sh.epp', {
-        'runner_name'               => $rootless_gitlab_runner::runner_account['name'],
+        'runner_name'               => $rootless_gitlab_runner::runner_name,
         'runtime_dir'               => $rootless_gitlab_runner::runtime_dir,
         'socket_path'               => $rootless_gitlab_runner::socket_path,
         'control_repository_path'   => $control_repository_path,
         'control_repository_branch' => $standalone['control_repository_branch'],
+        'service_name'              => $rootless_gitlab_runner::service_name,
       }),
     }
 
