@@ -14,6 +14,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- Standalone operators get a self-contained runbook: installation, applying, systemd automation, and self-update now live in `docs/standalone.md`, and the README slims to the configuration, secrets, and security model shared by every consumer.
 - The parameter surface is regrouped: five flat keys plus six parameter groups replace the 49 flat parameters. Related settings now live together, one hash per concern: `runner_account`, `configuration_file`, `packages` with its apt `sources`, `rootless_docker`, `runner_service`, and `standalone` with the nested `self_update`.
 - Every subkey ships a module default and the groups merge deep across Hiera layers, so node data holds only its deviations, and a mistyped subkey now fails the compile instead of being silently ignored.
 - The runner-token store reads as part of the runner family: `tokens` is now `runner_tokens`, alongside `runners` and `runner_defaults`. The automatic `Sensitive` wrap on lookup moves with the new key; the host's secret store file must follow the rename.
