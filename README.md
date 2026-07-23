@@ -475,16 +475,22 @@ ruby puppet/modules/rootless_gitlab_runner/scripts/check_hiera_data.rb --data-di
 pipeline (parser validation, YAML lint, this check) for a standalone control repository; the
 same command also works as a pre-commit hook for local feedback. Two behaviors to know:
 
-- **Advisory, non-failing:** subkeys set under a hash parameter whose effective `manage`
-  toggle resolves to `false` are recognized but not enforced as resources (the module is
-  hands-off that concern, though it may still read some of them as shared inputs; see
-  the `manage`-key rule above). The check reports them as an advisory rather than a
-  failure — declaring the state of an externally owned concern can be intentional — and a
-  human judges intent.
-- **Stated limits:** the check validates key names, not values (types are the compiler's job,
-  enforced at compile time), and it cannot see data layers outside the repository, such as the
-  off-repository secret store. Hierarchy levels addressed by `glob`/`globs` or `mapped_paths`
-  are not modeled; advisory resolution covers `path`/`paths` levels only.
+- **Advisory, non-failing:** a subkey set under a hash parameter whose effective
+  `manage` toggle resolves to `false` is recognized but not enforced as a resource
+  (the module is hands-off that concern, though it may still read some subkeys as
+  shared inputs; see the `manage`-key rule above). The toggle is resolved wherever
+  it sits, at the top level or nested in a sub-hash (`packages.sources.manage`,
+  `standalone.self_update.manage`), and over the module's own defaults, so a toggle
+  left at its default is still caught. A value that differs from the module default
+  is reported; a mere restatement of the default is treated as inert. The check
+  reports these as an advisory rather than a failure (declaring the state of an
+  externally owned concern can be intentional), and a human judges intent.
+- **Stated limits:** the check validates key names, not values (types are the
+  compiler's job, enforced at compile time), and it cannot see consumer data layers
+  outside the repository, such as the off-repository secret store. The module
+  defaults are read from static `path`/`paths` levels only. Hierarchy levels
+  addressed by `glob`/`globs` or `mapped_paths` are not modeled; advisory resolution
+  covers `path`/`paths` levels only.
 
 The module's own [`examples/data/`](examples/data/) is held to the same rule by the unit
 suite, so the shipped examples cannot drift from the parameter surface.
