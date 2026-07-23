@@ -51,7 +51,7 @@ rootless_gitlab_runner::runner_service:
 rootless_gitlab_runner::standalone:
   manage: true
   # Checkout of this control repository on the host (the apply target).
-  control_repository_path: '/opt/runner-infra'
+  control_repository_path: '/opt/gitlab-runner-infra'
   # The loop stays opt-in: self_update manage true needs the Self-update
   # prerequisites (see the README) provisioned first; never enable it on a
   # fleet host.
