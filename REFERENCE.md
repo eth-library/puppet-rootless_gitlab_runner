@@ -16,7 +16,7 @@
 * `rootless_gitlab_runner::config`: Renders the runner configuration, the no-detach-netns drop-in and the secret-store directory.
 * `rootless_gitlab_runner::packages`: Installs the packages listed under `packages.install`.
 * `rootless_gitlab_runner::rootless_docker`: Brings up the rootless docker user daemon behind a fail-loud preflight.
-* `rootless_gitlab_runner::self_update`: Installs the standalone apply script and the optional self-update loop.
+* `rootless_gitlab_runner::self_update`: Installs the standalone apply script and liveness healthcheck, plus the optional self-update loop.
 * `rootless_gitlab_runner::service`: Manages the runner system service and its privilege-drop drop-in.
 * `rootless_gitlab_runner::user`: Owns the runner group, user and home.
 
@@ -360,8 +360,10 @@ optional self-update loop nested inside.
 Options:
 
 * **:manage** `Boolean`: Declares the host standalone: installs the apply script
-(`/usr/local/sbin/rootless-gitlab-runner-apply`), the single definition
-of the apply command for timer-driven and manual runs. Default false.
+(`/usr/local/sbin/rootless-gitlab-runner-apply`, the single definition of
+the apply command for timer-driven and manual runs) and the liveness
+healthcheck (manager service, rootless docker daemon), whether or not the
+self-update loop is enabled. Default false.
 * **:control_repository_path** `Stdlib::Absolutepath`: Root-owned checkout of the control repository on the host (the apply and
 self-update target). The apply's manifest, module directory, Hiera
 configuration and optional `Puppetfile` derive strictly from the documented
@@ -378,16 +380,18 @@ prepended to the self-update service's PATH so the timer-driven,
 non-login apply can find them. Default `/opt/puppetlabs/bin`; the
 AIO-reuse topology sets `/opt/puppetlabs/puppet/bin` (gem executables
 live there, not in the symlink farm).
-* **:healthcheck_interval** `String[1]`: systemd time span between healthcheck runs. Default `15min`.
+* **:healthcheck_interval** `String[1]`: systemd time span between liveness healthcheck runs. Default `15min`.
 * **:self_update** `Struct[{ manage => Boolean, apply_interval => String[1], apply_timeout => String[1] }]`: The self-update loop: `manage` (default false) installs a oneshot
 service + timer that fetch the control repository, verify the commit
 signature, reset to the remote branch, run `r10k puppetfile install` and
-re-apply — plus the healthcheck script + timer. Only valid on a
-standalone host: enabling it with `standalone.manage` off fails at
-compile time. Never enable it where a Puppet server or r10k already
-deploys the host. `apply_interval` (default `5min`) is the timer's
-cadence; `apply_timeout` (default `15min`) the apply service's
-`TimeoutStartSec=` (a oneshot unit has no default start timeout).
+re-apply. It also layers the loop-supervision checks (apply-timer state,
+checkout staleness, bootstrap-gem presence) into the healthcheck script,
+which itself installs with `standalone.manage`. Only valid on a standalone
+host: enabling it with `standalone.manage` off fails at compile time.
+Never enable it where a Puppet server or r10k already deploys the host.
+`apply_interval` (default `5min`) is the timer's cadence; `apply_timeout`
+(default `15min`) the apply service's `TimeoutStartSec=` (a oneshot unit
+has no default start timeout).
 
 ## Functions
 
