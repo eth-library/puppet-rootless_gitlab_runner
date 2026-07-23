@@ -233,8 +233,8 @@ ownership toggle, opt-in by default:
 | Runner account (group, user, home) | [`runner_account.manage`](#runner_account) | `false` |
 | Rootless-Docker daemon bring-up, subordinate IDs | [`rootless_docker.manage`](#rootless_docker) | `false` |
 | Runner service + its systemd drop-in | [`runner_service.manage`](#runner_service) | `false` |
-| Standalone topology (the apply script) | [`standalone.manage`](#standalone) | `false` |
-| Self-update loop + healthcheck | [`standalone.self_update.manage`](#standaloneself_update) | `false` |
+| Standalone topology (apply script + liveness healthcheck) | [`standalone.manage`](#standalone) | `false` |
+| Self-update loop | [`standalone.self_update.manage`](#standaloneself_update) | `false` |
 
 The `manage` keys are **persistent ownership switches**, not one-shot bootstrap flags:
 set once in the host's Hiera and left on, so every apply keeps owning and drift-correcting that
@@ -347,7 +347,10 @@ window ([Restarts and graceful shutdown](#restarts-and-graceful-shutdown)).
 rather than being deployed by a Puppet server. It installs the apply script
 (`/usr/local/sbin/rootless-gitlab-runner-apply`), the single definition of the apply command
 for manual runs and the self-update loop alike
-([Applying the configuration](#applying-the-configuration)). The apply's manifest, module
+([Applying the configuration](#applying-the-configuration)), and a liveness healthcheck
+(script + timer, default every `15min`, `standalone.healthcheck_interval`) that verifies the
+manager service and the rootless daemon (`docker info` as the runner user) — installed on any
+standalone host, with or without the loop. The apply's manifest, module
 directory and Hiera configuration derive from the documented control-repository layout
 (`puppet/manifests/site.pp`, `puppet/modules`, `puppet/hiera.yaml` beneath the checkout); the
 isolated Puppet state directories are `standalone.puppet_confdir`/`standalone.puppet_vardir`,
@@ -357,18 +360,18 @@ non-login apply.
 #### `standalone.self_update`
 
 With `standalone.self_update.manage` on — only valid on a standalone host: enabling it with
-`standalone.manage` off fails at compile time — the module installs the self-update loop, two
-units each on its own timer:
+`standalone.manage` off fails at compile time — the module installs the self-update loop: a
+oneshot systemd service + timer (default every `5min`, `standalone.self_update.apply_interval`)
+that fetch the control-repository checkout, run `git verify-commit` on the remote branch (only
+signed commits are applied), reset to it, install Puppetfile-pinned modules via
+`r10k puppetfile install` (a no-op without a Puppetfile), and re-apply through the apply script
+above.
 
-- A oneshot systemd service + timer (default every `5min`, `standalone.self_update.apply_interval`)
-  that fetch the control-repository checkout, run `git verify-commit` on the remote branch
-  (only signed commits are applied), reset to it, install Puppetfile-pinned modules via
-  `r10k puppetfile install` (a no-op without a Puppetfile), and re-apply through the apply
-  script above.
-- A healthcheck script + timer (default every `15min`, `standalone.healthcheck_interval`) that
-  verifies the manager service, the rootless daemon (`docker info` as the runner user, from a
-  non-login context), and that the checkout is not stale against the remote (a dead pull
-  credential fails loud instead of leaving the host applying old code behind a green timer).
+The loop also layers its own supervision onto the liveness healthcheck that `standalone.manage`
+installs: it adds checks that the apply timer is enabled and armed, that the checkout is not
+stale against the remote (a dead pull credential fails loud instead of leaving the host applying
+old code behind a green timer), and that the bootstrap gems (`r10k`, `hiera-eyaml`) are present
+in the AIO Ruby.
 
 The service sets `HOME=/root` (git/SSH need it) and an explicit `TimeoutStartSec`
 (`standalone.self_update.apply_timeout`); Puppet exit code 2 ("changes applied") counts as
@@ -386,7 +389,7 @@ host-specific:
 
 | Hiera key | Description | Default |
 |---|---|---|
-| `runner_account.uid` | Numeric uid of the runner account; the rootless runtime paths (`/run/user/<uid>`, the docker socket) derive from it | none — required when `runner_account.manage`, `rootless_docker.manage` or `standalone.self_update.manage` is on, or for a `socket_mount` runner |
+| `runner_account.uid` | Numeric uid of the runner account; the rootless runtime paths (`/run/user/<uid>`, the docker socket) derive from it | none — required when `runner_account.manage`, `rootless_docker.manage` or `standalone.manage` is on, or for a `socket_mount` runner |
 | `standalone.control_repository_path` | Checkout of the control repository on the host (the apply and self-update target) | `/opt/gitlab-runner-infra` |
 
 A wrong `standalone.control_repository_path` is caught at runtime — by the self-update
@@ -791,12 +794,13 @@ wait for before systemd escalates to SIGKILL
 *Standalone only. In a fleet, your Puppet server (or existing apply pipeline) already
 provides continuous convergence.*
 
-With `standalone.self_update.manage` on, the module installs and keeps converged the full
-self-update loop: `gitlab-runner-apply.service` + `.timer` (fetch,
+With `standalone.manage` on, the module installs `gitlab-runner-healthcheck.service` + `.timer`
+(liveness). With `standalone.self_update.manage` also on, it installs and keeps converged the
+self-update loop, `gitlab-runner-apply.service` + `.timer` (fetch,
 verify the commit signature, reset to the remote branch, apply through the apply script above,
-default every 5 minutes), and
-`gitlab-runner-healthcheck.service` + `.timer`. Nothing needs to be copied or enabled by hand;
-the timers are started and enabled by the apply that installs them.
+default every 5 minutes), and layers the loop-supervision checks into the healthcheck. Nothing
+needs to be copied or enabled by hand; the timers are started and enabled by the apply that
+installs them.
 
 systemd serialises runs (a oneshot service never overlaps itself, so no external locking is
 needed), and `SuccessExitStatus=2` treats Puppet's "changes applied" exit code as success, so only
@@ -902,7 +906,7 @@ Confirm nothing is in a failed state:
 systemctl list-units --failed
 ```
 
-Confirm the apply and healthcheck timers are scheduled (with the self-update toggle on):
+Confirm the timers are scheduled (the healthcheck timer with `standalone.manage`; the apply timer with the self-update loop):
 
 ```
 systemctl list-timers 'gitlab-runner-*'
@@ -927,10 +931,11 @@ gitlab-runner verify
 
 [`gitlab-runner verify`](https://docs.gitlab.com/runner/commands/#gitlab-runner-verify) asks
 GitLab whether each registered runner can connect; run it by hand after rotating tokens. The
-module's healthcheck timer does not run `verify`; it checks the manager service, the rootless
-Docker daemon (as the runner user), that the apply timer is still enabled and armed, and checkout
-staleness against the remote, surfacing failures as failed units. Token validity is the one check
-you make manually.
+module's healthcheck timer does not run `verify`; it checks the manager service and the rootless
+Docker daemon (as the runner user) on any standalone host, and — where the self-update loop is
+enabled — also that the apply timer is still enabled and armed, checkout staleness against the
+remote, and the bootstrap gems, surfacing failures as failed units. Token validity is the one
+check you make manually.
 
 On the GitLab Runners page, a connected runner turns green and is shown online. A runner always
 appears once created, so it is that online state, not its mere presence, that confirms the host

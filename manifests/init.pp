@@ -195,8 +195,10 @@
 #   optional self-update loop nested inside.
 # @option standalone [Boolean] :manage
 #   Declares the host standalone: installs the apply script
-#   (`/usr/local/sbin/rootless-gitlab-runner-apply`), the single definition
-#   of the apply command for timer-driven and manual runs. Default false.
+#   (`/usr/local/sbin/rootless-gitlab-runner-apply`, the single definition of
+#   the apply command for timer-driven and manual runs) and the liveness
+#   healthcheck (manager service, rootless docker daemon), whether or not the
+#   self-update loop is enabled. Default false.
 # @option standalone [Stdlib::Absolutepath] :control_repository_path
 #   Root-owned checkout of the control repository on the host (the apply and
 #   self-update target). The apply's manifest, module directory, Hiera
@@ -219,17 +221,19 @@
 #   AIO-reuse topology sets `/opt/puppetlabs/puppet/bin` (gem executables
 #   live there, not in the symlink farm).
 # @option standalone [String[1]] :healthcheck_interval
-#   systemd time span between healthcheck runs. Default `15min`.
+#   systemd time span between liveness healthcheck runs. Default `15min`.
 # @option standalone [Struct[{ manage => Boolean, apply_interval => String[1], apply_timeout => String[1] }]] :self_update
 #   The self-update loop: `manage` (default false) installs a oneshot
 #   service + timer that fetch the control repository, verify the commit
 #   signature, reset to the remote branch, run `r10k puppetfile install` and
-#   re-apply — plus the healthcheck script + timer. Only valid on a
-#   standalone host: enabling it with `standalone.manage` off fails at
-#   compile time. Never enable it where a Puppet server or r10k already
-#   deploys the host. `apply_interval` (default `5min`) is the timer's
-#   cadence; `apply_timeout` (default `15min`) the apply service's
-#   `TimeoutStartSec=` (a oneshot unit has no default start timeout).
+#   re-apply. It also layers the loop-supervision checks (apply-timer state,
+#   checkout staleness, bootstrap-gem presence) into the healthcheck script,
+#   which itself installs with `standalone.manage`. Only valid on a standalone
+#   host: enabling it with `standalone.manage` off fails at compile time.
+#   Never enable it where a Puppet server or r10k already deploys the host.
+#   `apply_interval` (default `5min`) is the timer's cadence; `apply_timeout`
+#   (default `15min`) the apply service's `TimeoutStartSec=` (a oneshot unit
+#   has no default start timeout).
 class rootless_gitlab_runner (
   Integer[1]                       $concurrent,
   Array[Hash]                      $runners,
@@ -290,12 +294,13 @@ class rootless_gitlab_runner (
   }
 
   # The uid is host data with no sensible module default. Fail loud where it
-  # is needed but unset, instead of inventing one. The self-update loop needs
-  # it too: its healthcheck probes the rootless daemon as the runner user.
-  if $runner_account['uid'] =~ Undef and ($runner_account['manage'] or $rootless_docker['manage'] or $standalone['self_update']['manage']) {
+  # is needed but unset, instead of inventing one. A standalone host needs it
+  # too: the liveness healthcheck probes the rootless daemon as the runner
+  # user, so the uid is required wherever the healthcheck installs.
+  if $runner_account['uid'] =~ Undef and ($runner_account['manage'] or $rootless_docker['manage'] or $standalone['manage']) {
     fail(join([
       'rootless_gitlab_runner: runner_account.uid must be set when runner_account.manage, ',
-      'rootless_docker.manage or standalone.self_update.manage is enabled',
+      'rootless_docker.manage or standalone.manage is enabled',
     ]))
   }
 
