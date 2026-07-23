@@ -16,6 +16,9 @@ management: no Puppet server compiles and delivers its catalog as part of a flee
 
 - [When to use standalone](#when-to-use-standalone)
 - [Installation](#installation)
+- [The secret store](#the-secret-store)
+  - [Why a file over environment variables](#why-a-file-over-environment-variables)
+  - [Editing the secret store](#editing-the-secret-store)
 - [Applying the configuration](#applying-the-configuration)
 - [Automating with systemd](#automating-with-systemd)
 - [Self-update loop](#self-update-loop)
@@ -92,7 +95,7 @@ repository. Bootstrapping a host (run as root):
 3. Create each runner in GitLab (UI or API) and copy its `glrt-` authentication token (see
    [Adding a runner](../README.md#adding-a-runner)).
 4. Create the off-repository secret store `/etc/gitlab-runner-infra/secrets.yaml` (`0600`) with the
-   runner tokens (see [Secrets](../README.md#secrets)).
+   runner tokens (see [The secret store](#the-secret-store)).
 5. Add a Hiera node file `puppet/data/nodes/<hostname>.yaml`, where `<hostname>` is the host's
    short hostname (the `networking.hostname` fact), describing the runners (start from
    [`examples/data/nodes/host.example.yaml`](../examples/data/nodes/host.example.yaml)).
@@ -121,6 +124,63 @@ toggle table are in the [Configuration contract](../README.md#configuration-cont
 
 Because Puppet is idempotent, the same flow works on a **fresh host or an existing one**: each run
 converges to the declared state and corrects drift, so it is safe to repeat.
+
+## The secret store
+
+On a standalone host, the runner tokens live in a single root-owned file on the host, read by
+Hiera at apply time as just another data layer: `/etc/gitlab-runner-infra/secrets.yaml`, mode
+`0600`, holding the `rootless_gitlab_runner::runner_tokens` map. It is the hierarchy's
+off-repository layer and is **never committed**;
+[`examples/secrets.example.yaml`](../examples/secrets.example.yaml) is a starting template,
+and a hiera-eyaml backend encrypts it at rest. The shared token contract (the `token_key`
+indirection, blank-render versus fail-loud, `Sensitive` handling, the token at rest) is in
+the README's [Secrets](../README.md#secrets) section.
+
+The top-level key must be exactly `rootless_gitlab_runner::runner_tokens`. A store file that
+exists but uses a different top-level key (a bare `tokens:`, or a typo) resolves as an
+*absent* store, not an error: tokens render blank per the empty-store contract that lets a
+checkout without secrets still compile, and the mistake only shows up when the runner cannot
+reach GitLab. Check that key first when a populated store still renders blank tokens.
+
+### Why a file over environment variables
+
+Beyond staying out of git, the goal is to keep tokens out of the process environment. As a
+Hiera data layer, a YAML file is safer and simpler than environment variables here:
+
+- Environment variables bleed into job containers and child processes and are readable via
+  `/proc/<pid>/environ`, an exposure best avoided for runner tokens on a build host.
+- Feeding env vars into `puppet apply` needs an `EnvironmentFile=`, itself just a
+  less-structured secret file with extra indirection that still lands the secret in the
+  environment. Hiera reads YAML directly.
+- A YAML file also has a direct encryption-at-rest path (hiera-eyaml today, SOPS on the
+  README's [Roadmap](../README.md#roadmap)); environment variables do not.
+
+### Editing the secret store
+
+On the host, as root. The module manages the secret directory itself (root-owned, `0700`) on
+every apply; before the first apply, create it by hand:
+
+```
+sudo install -d -m 0700 /etc/gitlab-runner-infra
+```
+
+Add or update entries under `rootless_gitlab_runner::runner_tokens`:
+
+```
+sudoedit /etc/gitlab-runner-infra/secrets.yaml
+```
+
+Restrict the file to root:
+
+```
+sudo chmod 0600 /etc/gitlab-runner-infra/secrets.yaml
+```
+
+Every edit is followed by an apply to re-render the runner configuration (see
+[Applying the configuration](#applying-the-configuration)); the running service picks up the
+re-rendered configuration on its own within 3 seconds.
+
+The token never enters git, the systemd unit, or the process environment.
 
 ## Applying the configuration
 
