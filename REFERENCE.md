@@ -221,9 +221,9 @@ configuration file, its directory, and the account's systemd user tree.
 something a module can sensibly invent. It derives the rootless runtime
 paths (`/run/user/<uid>`, the docker socket) and is enforced on the user
 when `runner_account.manage` is on; the apply fails loud when it is unset
-but needed — with `runner_account.manage`, `rootless_docker.manage` or
-`standalone.self_update.manage` on, or to derive the docker socket path
-for a `socket_mount` runner.
+but needed — with `runner_account.manage`, `rootless_docker.manage`,
+`runner_service.manage` or `standalone.self_update.manage` on, or to derive
+the docker socket path for a `socket_mount` runner.
 * **:home** `Stdlib::Absolutepath`: Home directory of the runner account. Default `/home/gitlab-runner`.
 
 ##### <a name="-rootless_gitlab_runner--packages"></a>`packages`
@@ -312,11 +312,13 @@ Options:
 * **:manage** `Boolean`: Whether to manage the runner system service, its privilege-drop systemd
 drop-in, and the configuration directory's mode so a privilege-dropped
 manager can traverse to its configuration file. Default false.
-* **:environment** `Optional[Array[Pattern[/\A[^\r\n]+\z/]]]`: `Environment=` lines (KEY=value) rendered into the service drop-in. When
-unset, defaults to pointing DOCKER_HOST at the rootless docker socket
-derived from `runner_account.uid`. The `Pattern` enforces the type: each
-line must be non-empty and single-line — a value containing a newline is
-rejected, so it cannot inject an extra systemd directive into the drop-in.
+* **:environment** `Optional[Array[Pattern[/\A[^\r\n]+\z/]]]`: Additional `Environment=` lines (KEY=value) rendered into the service
+drop-in, alongside the module-owned `DOCKER_HOST` line. `DOCKER_HOST` itself
+is derived from `runner_account.uid` and cannot be set here: a `DOCKER_HOST`
+line fails the compile, and a runner whose jobs need a different daemon uses
+the per-runner `host` key. The `Pattern` enforces the type: each line must be
+non-empty and single-line, so a value containing a newline is rejected and
+cannot inject an extra systemd directive into the drop-in.
 * **:timeout_stop_sec** `Optional[Variant[Integer[0], String[1]]]`: `TimeoutStopSec=` written into the manager service drop-in — how long
 systemd waits for a graceful drain before escalating to `SIGKILL`. Unset
 by default, so systemd's `DefaultTimeoutStopSec` (typically 90s) applies;

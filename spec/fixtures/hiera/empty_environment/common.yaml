@@ -1,0 +1,10 @@
+---
+# Fleet layer: an environment line the node layer will remove, plus the account
+# uid the derived socket path is built from. Partial structs only; every unset
+# subkey comes from the module data layer via the deep-merge lookup_options.
+rootless_gitlab_runner::runner_account:
+  uid: 2000
+rootless_gitlab_runner::runner_service:
+  manage: true
+  environment:
+    - 'DEBUG=1'
