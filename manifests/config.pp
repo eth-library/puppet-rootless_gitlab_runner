@@ -4,6 +4,9 @@ class rootless_gitlab_runner::config {
   assert_private()
 
   $runner_name = $rootless_gitlab_runner::runner_account['name']
+  # Primary group, defaulting to the account name (derived in init.pp). Owners
+  # stay the account name; only the group ownerships derive from it.
+  $runner_group = $rootless_gitlab_runner::runner_group
   $runner_home = $rootless_gitlab_runner::runner_account['home']
   $configuration_file_path = $rootless_gitlab_runner::configuration_file['path']
 
@@ -87,7 +90,7 @@ class rootless_gitlab_runner::config {
     file { $config_dir:
       ensure => directory,
       owner  => 'root',
-      group  => $runner_name,
+      group  => $runner_group,
       mode   => '0770',
     }
 
@@ -104,7 +107,7 @@ class rootless_gitlab_runner::config {
     file { "${config_dir}/.runner_system_id":
       ensure => file,
       owner  => $runner_name,
-      group  => $runner_name,
+      group  => $runner_group,
       mode   => '0600',
     }
   }
@@ -118,7 +121,7 @@ class rootless_gitlab_runner::config {
   file { $configuration_file_path:
     ensure  => file,
     owner   => $runner_name,
-    group   => $runner_name,
+    group   => $runner_group,
     mode    => '0600',
     content => Sensitive(epp('rootless_gitlab_runner/config.toml.epp', {
       'concurrent'         => $rootless_gitlab_runner::concurrent,
@@ -145,7 +148,7 @@ class rootless_gitlab_runner::config {
   file { [$user_config_dir, $user_systemd_dir, $user_units_dir, $dropin_dir]:
     ensure => directory,
     owner  => $runner_name,
-    group  => $runner_name,
+    group  => $runner_group,
     mode   => '0755',
   }
 
@@ -155,7 +158,7 @@ class rootless_gitlab_runner::config {
   file { $dropin_path:
     ensure  => file,
     owner   => $runner_name,
-    group   => $runner_name,
+    group   => $runner_group,
     mode    => '0644',
     source  => 'puppet:///modules/rootless_gitlab_runner/no-detach-netns.conf',
     require => File[$dropin_dir],

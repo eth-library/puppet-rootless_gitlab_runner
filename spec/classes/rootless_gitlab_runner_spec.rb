@@ -438,20 +438,38 @@ describe 'rootless_gitlab_runner' do
     it { is_expected.to compile.with_all_deps }
     it { is_expected.to contain_group('gitlab-runner').with('ensure' => 'present', 'system' => true) }
 
-    it 'owns the user with the declared uid and home' do
+    it 'owns the user with the declared uid and home, primary group defaulting to the name' do
       is_expected.to contain_user('gitlab-runner').with(
         'ensure'     => 'present',
         'system'     => true,
         'uid'        => 4242,
+        'gid'        => 'gitlab-runner',
         'home'       => '/home/gitlab-runner',
         'managehome' => true,
-      )
+      ).that_requires('Group[gitlab-runner]')
     end
 
     %w[subuid subgid].each do |f|
       it "writes no #{f} entry (subids belong to rootless_docker.manage)" do
         is_expected.not_to contain_exec("rootless_gitlab_runner #{f} entry")
       end
+    end
+  end
+
+  # runner_account.group names the account's primary group; unset it defaults
+  # to the account name. With manage on, the module creates that group and sets
+  # it as the user's primary group instead of a same-named group.
+  context 'with runner_account.manage and a differently named primary group' do
+    let(:params) do
+      { 'runner_account' => struct_param('runner_account', 'manage' => true, 'uid' => 4242, 'group' => 'ci') }
+    end
+
+    it { is_expected.to compile.with_all_deps }
+
+    it 'creates the named group and sets it as the user primary group, not the account name' do
+      is_expected.to contain_group('ci').with('ensure' => 'present', 'system' => true)
+      is_expected.not_to contain_group('gitlab-runner')
+      is_expected.to contain_user('gitlab-runner').with('gid' => 'ci').that_requires('Group[ci]')
     end
   end
 
@@ -707,6 +725,32 @@ describe 'rootless_gitlab_runner' do
         .with_content(%r{^User=ci-worker$})
         .with_content(%r{^ExecStart=/usr/bin/gitlab-runner run --working-directory /srv/ci-worker --config /etc/gitlab-runner/config\.toml --service gitlab-runner$})
         .with_content(%r{^Environment=DOCKER_HOST=unix:///run/user/5000/docker\.sock$})
+    end
+
+    # An externally provisioned account (manage off) whose primary group is
+    # named differently. Every managed group ownership must derive from the
+    # group, while owners stay the account name — otherwise the first apply
+    # fails to resolve a group that does not exist.
+    context 'with a differently named primary group' do
+      let(:params) do
+        super().merge('runner_account' => struct_param('runner_account',
+                                                       'name' => 'ci-worker', 'uid' => 5000,
+                                                       'home' => '/srv/ci-worker', 'group' => 'ci'))
+      end
+
+      it { is_expected.to compile.with_all_deps }
+
+      it 'derives every managed group ownership from the group, owners staying the account name' do
+        is_expected.to contain_file('/etc/gitlab-runner/config.toml')
+          .with('owner' => 'ci-worker', 'group' => 'ci')
+        is_expected.to contain_file('/etc/gitlab-runner').with('group' => 'ci')
+        is_expected.to contain_file('/etc/gitlab-runner/.runner_system_id')
+          .with('owner' => 'ci-worker', 'group' => 'ci')
+        is_expected.to contain_file('/srv/ci-worker/.config/systemd/user')
+          .with('owner' => 'ci-worker', 'group' => 'ci')
+        is_expected.to contain_file('/srv/ci-worker/.config/systemd/user/docker.service.d/no-detach-netns.conf')
+          .with('owner' => 'ci-worker', 'group' => 'ci')
+      end
     end
   end
 

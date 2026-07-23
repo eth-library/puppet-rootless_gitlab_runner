@@ -6,9 +6,11 @@ class rootless_gitlab_runner::user {
   $account = $rootless_gitlab_runner::runner_account
 
   if $account['manage'] {
-    $runner_name = $account['name']
+    $runner_name  = $account['name']
+    # Primary group, defaulting to the account name (derived in init.pp).
+    $runner_group = $rootless_gitlab_runner::runner_group
 
-    group { $runner_name:
+    group { $runner_group:
       ensure => present,
       system => true,
     }
@@ -19,11 +21,11 @@ class rootless_gitlab_runner::user {
       ensure     => present,
       system     => true,
       uid        => $account['uid'],
-      gid        => $runner_name,
+      gid        => $runner_group,
       home       => $account['home'],
       managehome => true,
       shell      => '/bin/bash',
-      require    => Group[$runner_name],
+      require    => Group[$runner_group],
     }
   }
 }

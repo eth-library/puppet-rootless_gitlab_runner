@@ -175,7 +175,8 @@ Struct[{
 ```
 
 The rendered runner configuration file (GitLab Runner's `config.toml`).
-Owner and group derive from `runner_account.name`; the mode is fixed 0600
+Owner derives from `runner_account.name` and group from
+`runner_account.group` (which defaults to the name); the mode is fixed 0600
 (the file carries the runner tokens).
 
 Options:
@@ -190,6 +191,7 @@ Data type:
 Struct[{
     manage => Boolean,
     name   => Rootless_gitlab_runner::Username,
+    group  => Optional[Rootless_gitlab_runner::Username],
     uid    => Optional[Integer[1]],
     home   => Stdlib::Absolutepath,
   }]
@@ -207,6 +209,13 @@ configuration-management system owns the account. The subordinate UID/GID
 ranges rootless docker needs are owned by `rootless_docker.manage`.
 Default false.
 * **:name** `Rootless_gitlab_runner::Username`: Username of the runner account. Default `gitlab-runner`.
+* **:group** `Optional[Rootless_gitlab_runner::Username]`: Name of the account's primary group. Defaults to the account name (the
+data layer cannot express that default, so an unset key falls back to
+`name` in code). Set it for an externally provisioned account whose primary
+group is named differently (e.g. account `ci-worker`, group `ci`): it feeds
+every group ownership the module manages — the group resource and the
+user's primary group where `manage` is on, and the group of the runner
+configuration file, its directory, and the account's systemd user tree.
 * **:uid** `Optional[Integer[1]]`: Numeric uid of the runner account. No default: the uid is host data, not
 something a module can sensibly invent. It derives the rootless runtime
 paths (`/run/user/<uid>`, the docker socket) and is enforced on the user
