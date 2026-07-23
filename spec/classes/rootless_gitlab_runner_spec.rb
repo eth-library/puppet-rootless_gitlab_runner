@@ -71,6 +71,15 @@ describe 'rootless_gitlab_runner' do
       end
     end
 
+    it 'installs nothing from the standalone layer on a fleet host (no healthcheck, no apply)' do
+      is_expected.not_to contain_file('/usr/local/sbin/rootless-gitlab-runner-apply')
+      is_expected.not_to contain_file('/usr/local/sbin/rootless-gitlab-runner-healthcheck')
+      is_expected.not_to contain_file('/etc/systemd/system/gitlab-runner-healthcheck.service')
+      is_expected.not_to contain_file('/etc/systemd/system/gitlab-runner-healthcheck.timer')
+      is_expected.not_to contain_service('gitlab-runner-healthcheck.timer')
+      is_expected.not_to contain_exec('rootless_gitlab_runner daemon-reload (standalone)')
+    end
+
     it 'chains the classes so a one-shot fresh apply converges in order' do
       is_expected.to contain_class('rootless_gitlab_runner::apt_repos').that_comes_before('Class[rootless_gitlab_runner::packages]')
       is_expected.to contain_class('rootless_gitlab_runner::packages').that_comes_before('Class[rootless_gitlab_runner::user]')
@@ -403,7 +412,7 @@ describe 'rootless_gitlab_runner' do
     {
       'runner_account.manage'  => { 'runner_account' => { 'manage' => true } },
       'rootless_docker.manage' => { 'rootless_docker' => { 'manage' => true } },
-      'self_update.manage'     => { 'standalone' => { 'manage' => true, 'self_update' => { 'manage' => true } } },
+      'standalone.manage'      => { 'standalone' => { 'manage' => true } },
     }.each do |toggle, overrides|
       context "with #{toggle} enabled" do
         let(:params) { overrides.to_h { |name, over| [name, struct_param(name, over)] } }
@@ -810,8 +819,9 @@ describe 'rootless_gitlab_runner' do
 
   context 'with standalone.manage alone (no self-update loop)' do
     let(:params) do
-      { 'standalone' => struct_param('standalone', 'manage' => true,
-                                                   'control_repository_path' => '/opt/infra') }
+      { 'standalone'     => struct_param('standalone', 'manage' => true,
+                                                       'control_repository_path' => '/opt/infra'),
+        'runner_account' => account_with_uid(4242) }
     end
 
     it { is_expected.to compile.with_all_deps }
@@ -830,12 +840,30 @@ describe 'rootless_gitlab_runner' do
         .with_content(%r{"/opt/infra/puppet/manifests/site\.pp"})
     end
 
-    it 'installs no self-update units and no healthcheck without the loop' do
-      is_expected.not_to contain_file('/usr/local/sbin/rootless-gitlab-runner-healthcheck')
+    it 'installs the liveness healthcheck (script, unit, timer) even without the loop' do
+      is_expected.to contain_file('/usr/local/sbin/rootless-gitlab-runner-healthcheck').with_mode('0755')
+      is_expected.to contain_file('/etc/systemd/system/gitlab-runner-healthcheck.service')
+      is_expected.to contain_file('/etc/systemd/system/gitlab-runner-healthcheck.timer')
+      is_expected.to contain_service('gitlab-runner-healthcheck.timer')
+        .with('ensure' => 'running', 'enable' => true)
+      is_expected.to contain_exec('rootless_gitlab_runner daemon-reload (standalone)')
+    end
+
+    it 'renders only the liveness layer: no apply-timer, staleness, or gem checks' do
+      is_expected.to contain_file('/usr/local/sbin/rootless-gitlab-runner-healthcheck')
+        .with_content(%r{is-active --quiet 'gitlab-runner'})
+        .with_content(%r{rootless docker user unit is not active})
+        .with_content(%r{docker info})
+        .without_content(%r{gitlab-runner-apply\.timer})
+        .without_content(%r{ls-remote})
+        .without_content(%r{checkout is stale})
+        .without_content(%r{gem list --installed})
+    end
+
+    it 'installs no self-update apply units without the loop' do
       is_expected.not_to contain_file('/etc/systemd/system/gitlab-runner-apply.service')
       is_expected.not_to contain_file('/etc/systemd/system/gitlab-runner-apply.timer')
       is_expected.not_to contain_service('gitlab-runner-apply.timer')
-      is_expected.not_to contain_exec('rootless_gitlab_runner daemon-reload (self-update)')
     end
   end
 
@@ -893,7 +921,7 @@ describe 'rootless_gitlab_runner' do
         .without_content(%r{OnFailure})
     end
 
-    it 'renders the healthcheck with daemon probe, apply-timer and SHA-staleness assertions' do
+    it 'renders the healthcheck with daemon probe, apply-timer, SHA-staleness and bootstrap-gem assertions' do
       is_expected.to contain_file('/usr/local/sbin/rootless-gitlab-runner-healthcheck')
         .with_mode('0755')
         .with_content(%r{docker info})
@@ -903,6 +931,9 @@ describe 'rootless_gitlab_runner' do
         .with_content(%r{is-active --quiet gitlab-runner-apply\.timer})
         .with_content(%r{ls-remote origin 'refs/heads/main'})
         .with_content(%r{checkout is stale})
+        .with_content(%r{for gem in r10k hiera-eyaml})
+        .with_content(%r{/opt/puppetlabs/puppet/bin/gem list --installed --exact})
+        .with_content(%r{bootstrap gem '\$\{gem\}' is missing from the AIO Ruby})
     end
 
     %w[gitlab-runner-apply.timer gitlab-runner-healthcheck.timer].each do |t|

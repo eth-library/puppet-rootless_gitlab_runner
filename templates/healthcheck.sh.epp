@@ -4,6 +4,7 @@
       String $control_repository_path,
       String $control_repository_branch,
       String $service_name,
+      Boolean $self_update_manage,
 | -%>
 <%# The manager-service check below asserts the packaged gitlab-runner systemd
     unit: $service_name is the unit name the gitlab-runner package defines,
@@ -14,10 +15,10 @@
 # is overwritten on the next apply.
 #
 # Health check: silent when healthy, loud on failure (non-zero exit + message
-# on stderr, which lands in the journal). Checks the manager service, the
-# rootless docker daemon (as the runner user, from a non-login context), and
-# checkout staleness — a dead pull credential must not leave the host applying
-# stale <%= $control_repository_branch %> behind a green apply timer.
+# on stderr, which lands in the journal). Two layers: liveness (manager
+# service, rootless docker daemon as the runner user) runs on any standalone
+# host; the self-update-loop supervision (apply timer, checkout staleness,
+# bootstrap gems) is rendered only where the loop drives convergence.
 set -uo pipefail
 
 status=0
@@ -34,16 +35,9 @@ as_runner() {
     "$@"
 }
 
+# ── Liveness: meaningful on any standalone host, loop or not. ──
 systemctl is-active --quiet '<%= $service_name %>' \
   || err "manager service '<%= $service_name %>' is not active"
-
-# The apply timer drives self-update; a disabled or stopped timer silently
-# halts convergence and would otherwise surface only later as checkout
-# staleness. Assert it is both enabled (survives reboot) and armed now.
-systemctl is-enabled --quiet gitlab-runner-apply.timer \
-  || err "apply timer 'gitlab-runner-apply.timer' is not enabled (self-update halted)"
-systemctl is-active --quiet gitlab-runner-apply.timer \
-  || err "apply timer 'gitlab-runner-apply.timer' is not active (self-update halted)"
 
 as_runner systemctl --user is-active --quiet docker \
   || err "rootless docker user unit is not active"
@@ -51,6 +45,17 @@ as_runner systemctl --user is-active --quiet docker \
 # setuptool check is prerequisites-only; docker info is the daemon health probe.
 as_runner docker info >/dev/null 2>&1 \
   || err "docker info failed as <%= $runner_name %>"
+<% if $self_update_manage { -%>
+
+# ── Self-update-loop supervision: only where an automatic loop promises
+#    convergence (a manually-applied host is legitimately behind origin). ──
+# The apply timer drives self-update; a disabled or stopped timer silently
+# halts convergence and would otherwise surface only later as checkout
+# staleness. Assert it is both enabled (survives reboot) and armed now.
+systemctl is-enabled --quiet gitlab-runner-apply.timer \
+  || err "apply timer 'gitlab-runner-apply.timer' is not enabled (self-update halted)"
+systemctl is-active --quiet gitlab-runner-apply.timer \
+  || err "apply timer 'gitlab-runner-apply.timer' is not active (self-update halted)"
 
 # SHA staleness (mandatory): compare the local checkout against the remote
 # head without mutating the checkout. An unreachable origin is itself a
@@ -63,5 +68,16 @@ if [[ -z "${remote_sha}" ]]; then
 elif [[ "${local_sha}" != "${remote_sha}" ]]; then
   err "checkout is stale: local ${local_sha} != origin/<%= $control_repository_branch %> ${remote_sha}"
 fi
+
+# Bootstrap gems in the AIO Ruby: r10k and hiera-eyaml. A missing gem also
+# fails the apply timer (r10k before puppet apply, hiera-eyaml at lookup);
+# asserting them here turns that into one clear message instead of a raw
+# apply failure. The AIO gem lives at a fixed path, not the puppet_bindir
+# symlink farm.
+for gem in r10k hiera-eyaml; do
+  /opt/puppetlabs/puppet/bin/gem list --installed --exact "${gem}" >/dev/null 2>&1 \
+    || err "bootstrap gem '${gem}' is missing from the AIO Ruby (self-update apply will fail)"
+done
+<% } -%>
 
 exit "${status}"
