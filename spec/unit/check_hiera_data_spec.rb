@@ -90,7 +90,7 @@ describe 'scripts/check_hiera_data.rb' do
     it 'flags a nested subkey whose toggle sits at the module default, sparing a restated default' do
       output, status = run_check(File.join(CHECK_FIXTURES, 'nested_default_sources'), REAL_MODULE_PATH)
       expect(status.exitstatus).to eq(0)
-      expect(output).to match(%r{advisory \(non-failing\): 'rootless_gitlab_runner::packages': effective 'manage' is false.*sources\.docker\.location .*nodes/ci-runner\.yaml})
+      expect(output).to match(%r{advisory \(non-failing\): 'rootless_gitlab_runner::packages': effective 'sources\.manage' is false.*sources\.docker\.location .*nodes/ci-runner\.yaml})
       # The gitlab-runner location merely restates the module default: inert, not flagged.
       expect(output).not_to match(/sources\.gitlab_runner\.location/)
     end
@@ -98,7 +98,7 @@ describe 'scripts/check_hiera_data.rb' do
     it 'judges a nested loop toggle at the module default independently of the enclosing manage' do
       output, status = run_check(File.join(CHECK_FIXTURES, 'nested_self_update'), REAL_MODULE_PATH)
       expect(status.exitstatus).to eq(0)
-      expect(output).to match(%r{advisory \(non-failing\): 'rootless_gitlab_runner::standalone': effective 'manage' is false.*self_update\.apply_interval .*nodes/ci-runner\.yaml})
+      expect(output).to match(%r{advisory \(non-failing\): 'rootless_gitlab_runner::standalone': effective 'self_update\.manage' is false.*self_update\.apply_interval .*nodes/ci-runner\.yaml})
       # apply_timeout restates the module default; standalone.manage is true but does not lift the inner toggle.
       expect(output).not_to match(/apply_timeout/)
     end

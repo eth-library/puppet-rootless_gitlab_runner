@@ -278,34 +278,42 @@ class HieraDataCheck
   def context_advisories(context)
     files = files_for(context)
     offending_keys = offenders.map { |_, key, _| key }.to_set
-    candidate_keys(files).filter_map do |key|
-      next if offending_keys.include?(key)
+    candidate_keys(files).flat_map do |key|
+      next [] if offending_keys.include?(key)
 
       repo_values = files.filter_map { |f| parsed_data[f][key] }
       default = module_defaults[key]
       consumer = merge_layers(repo_values)
       effective = merge_layers(repo_values + [default].compact)
 
-      leaves = unenforced_leaves(consumer, effective, default, nil, [])
-      next if leaves.empty?
-
-      grouped = leaves.group_by { |dotted, value| source_file(files, key, dotted, value) }
-                      .map { |file, entries| "#{entries.map(&:first).sort.join(', ')} (#{file})" }
-      "'#{key}': effective 'manage' is false, so the module does not enforce " \
-        "resources from these subkeys: #{grouped.sort.join('; ')} — the module " \
-        'may still read some of them as shared inputs; legitimate as declared ' \
-        'state of an externally owned concern; a human judges intent'
+      # One line per governing toggle, so subkeys under different nested
+      # toggles of the same key are each named against the toggle that disables
+      # them (a top-level toggle renders as 'manage').
+      leaves = unenforced_leaves(consumer, effective, default, nil, [], [])
+      leaves.group_by { |_, _, toggle| toggle }.sort.map do |toggle, entries|
+        grouped = entries.group_by { |dotted, value, _| source_file(files, key, dotted, value) }
+                         .map { |file, subkeys| "#{subkeys.map(&:first).sort.join(', ')} (#{file})" }
+        "'#{key}': effective '#{toggle}' is false, so the module does not enforce " \
+          "resources from these subkeys: #{grouped.sort.join('; ')} — the module " \
+          'may still read some of them as shared inputs; legitimate as declared ' \
+          'state of an externally owned concern; a human judges intent'
+      end
     end
   end
 
-  # Consumer-set leaves ([dotted path, value]) governed by an effective
+  # Consumer-set leaves ([dotted path, value, toggle]) governed by an effective
   # manage:false whose value differs from the module default (a restatement of
   # the default is inert and suppressed). `enclosing` is the nearest manage on
-  # the path, resolved from the effective (consumer-over-module) value.
-  def unenforced_leaves(consumer, effective, default, enclosing, path)
+  # the path, resolved from the effective (consumer-over-module) value, and
+  # `enclosing_path` is where it sits, so the toggle can be named (`manage`,
+  # `sources.manage`, `self_update.manage`).
+  def unenforced_leaves(consumer, effective, default, enclosing, enclosing_path, path)
     return [] unless consumer.is_a?(Hash)
 
-    enclosing = effective['manage'] if effective.is_a?(Hash) && effective.key?('manage')
+    if effective.is_a?(Hash) && effective.key?('manage')
+      enclosing = effective['manage']
+      enclosing_path = path
+    end
     consumer.flat_map do |key, value|
       next [] if key == 'manage'
 
@@ -313,9 +321,9 @@ class HieraDataCheck
       eff_child = effective.is_a?(Hash) ? effective[key] : nil
       def_child = default.is_a?(Hash) ? default[key] : nil
       if value.is_a?(Hash)
-        unenforced_leaves(value, eff_child, def_child, enclosing, child_path)
+        unenforced_leaves(value, eff_child, def_child, enclosing, enclosing_path, child_path)
       elsif enclosing == false && value != def_child
-        [[child_path.join('.'), value]]
+        [[child_path.join('.'), value, (enclosing_path + ['manage']).join('.')]]
       else
         []
       end
