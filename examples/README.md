@@ -1,35 +1,40 @@
 # Examples
 
-A ready-to-adapt standalone (masterless `puppet apply`) consumer of this module. On a host
-managed by a central Puppet server, no skeleton is needed — declare the class from a role or
-profile like any other module and supply the same `data/` through the server's Hiera; see the
-main [README](../README.md) and [`REFERENCE.md`](../REFERENCE.md) for the parameter surface.
+Ready-to-adapt consumer files for this module: the Hiera `data/` layer every consumer needs,
+plus the skeleton that completes a standalone control repository.
 
-## The config
+## Fleet adoption
+
+On hosts managed by a Puppet server (or any control-repository/r10k setup), no skeleton is
+needed: add the module and its dependencies to the control repository's `Puppetfile`, declare
+the class from a role or profile (`include rootless_gitlab_runner`), and supply the same
+`data/` through the server's Hiera.
 
 - **`data/`** — the runner configuration as plain class parameters: `common.yaml` (shared
   defaults) and `nodes/host.example.yaml` (per-host). Copy the node file to
-  `nodes/<hostname>.yaml` and adjust.
-- **`secrets.example.yaml`** — the off-repo token store. It belongs at
-  `/etc/gitlab-runner-infra/secrets.yaml` on the host (root-owned, `0600`), never in the
-  control repo. See the README [Secrets](../README.md#secrets) section.
+  `nodes/<hostname>.yaml` and adjust; the `standalone` block is marked and dropped on a
+  fleet host.
+- Runner tokens ride the server-side secrets machinery as
+  `rootless_gitlab_runner::runner_tokens`; `secrets.example.yaml` shows the key shape (see
+  the README [Secrets](../README.md#secrets) section).
 
 ## The standalone skeleton
 
-`Puppetfile`, `hiera.yaml`, and `site.pp` complete a masterless control repo. Assemble them
-on the host — `Puppetfile` at the repo root; `hiera.yaml`, `site.pp` (as
-`puppet/manifests/site.pp`), and `data/` under `puppet/`:
+`Puppetfile`, `hiera.yaml`, and `site.pp` complete a masterless control repository for a
+standalone host. Assemble them on the host — `Puppetfile` at the repository root;
+`hiera.yaml`, `site.pp` (as `puppet/manifests/site.pp`), and `data/` under `puppet/`:
 
 ```
-<repo>/Puppetfile
-<repo>/puppet/hiera.yaml
-<repo>/puppet/manifests/site.pp
-<repo>/puppet/data/
+<repository>/Puppetfile
+<repository>/puppet/hiera.yaml
+<repository>/puppet/manifests/site.pp
+<repository>/puppet/data/
 ```
 
 `hiera.yaml` keeps `data/` beside it (`datadir: data`), so it resolves unchanged in either
-place. The README [Installation](../README.md#installation) section walks the bring-up end to
-end.
+place. On a standalone host, `secrets.example.yaml` becomes the off-repository token store at
+`/etc/gitlab-runner-infra/secrets.yaml` (root-owned, `0600`), never committed. The standalone
+runbook, [`docs/standalone.md`](../docs/standalone.md), walks the bring-up end to end.
 
 ## CI for the control repository
 
