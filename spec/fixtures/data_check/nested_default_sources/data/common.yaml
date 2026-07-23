@@ -1,0 +1,3 @@
+---
+# No packages.sources.manage is set anywhere in this repository: the toggle
+# resolves from the deployed module's own data layer (its default, false).
