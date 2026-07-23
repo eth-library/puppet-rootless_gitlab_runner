@@ -130,9 +130,10 @@ of `config.toml`. Each entry is a hash; recognised keys:
 key `MaxUploadedArchiveSize` (Integer, default 0)),
 `allowed_images` (Array[String]), `allowed_pull_policies` (Array[String]).
 Tokens are merged in from `runner_tokens[token_key]` and must not appear
-here. `host` is only for an externally managed daemon at a non-derived
-path: where the module manages the runner service, the drop-in's
-`DOCKER_HOST` already points the executor at the derived rootless socket.
+here. `host` is a passthrough for GitLab Runner's own `[runners.docker]`
+host setting, pointing one runner's jobs at a specific daemon socket; the
+managed runner service's own `DOCKER_HOST` is derived from the uid and set
+independently of it.
 
 ##### <a name="-rootless_gitlab_runner--runner_defaults"></a>`runner_defaults`
 
