@@ -30,26 +30,34 @@
 # without a `::` are not automatic-parameter-lookup keys and are ignored.
 #
 # Advisory (non-failing): a declared hash-valued parameter can carry a
-# `manage` toggle ("false means hands-off"). A `manage` that resolves to
-# false means the module does not create or enforce that concern's resources,
-# so subkeys set under it are not enforced — though a module may still read
-# some of them as shared inputs (identity keys other concerns derive from).
-# Setting them can be legitimate declared-state documentation of an
-# externally owned concern, so the check reports an advisory and a human
-# judges intent. The
-# effective `manage` is resolved from the repository's own data layers: the
-# hierarchy levels of the given hiera.yaml that resolve inside the data
-# directory, in hierarchy order, highest-priority `manage` subkey wins (the
-# first-found value, matching both Hiera first-found and deep-merge semantics
-# for a scalar subkey). Node contexts are derived from the data file names
-# matched by interpolated hierarchy paths. When no in-repository layer sets
-# `manage`, the check stays silent — the module-side default is a data layer
-# it cannot see.
+# `manage` toggle ("false means hands-off"), at the top level or nested inside
+# a sub-hash (for example `packages.sources.manage`,
+# `standalone.self_update.manage`). Each subkey is judged against the nearest
+# enclosing `manage` on its own path: a `manage` that resolves to false means
+# the module does not create or enforce that concern's resources, so subkeys
+# set under it are not enforced — though a module may still read some of them
+# as shared inputs (identity keys other concerns derive from). Setting them can
+# be legitimate declared-state documentation of an externally owned concern, so
+# the check reports an advisory and a human judges intent.
+#
+# The effective `manage` is resolved from the consumer's own data layers over
+# the deployed module's module data layer (its `hiera.yaml` and data directory,
+# the lowest-priority source), in hierarchy order, highest-priority `manage`
+# subkey wins (first-found, matching Hiera's first-found and deep-merge
+# semantics for a scalar subkey). Reading the module defaults resolves a toggle
+# left at its default (silent before) and lets the advisory separate a consumer
+# value that differs from the module default (flagged) from a mere restatement
+# of the default (inert, suppressed). Node contexts are derived from the data
+# file names matched by interpolated hierarchy paths.
 #
 # Stated limits: the check validates key names, not values (types are the
-# compiler's job), and it cannot see data layers outside the repository (for
-# example an off-repository secret store; hierarchy levels whose datadir
-# resolves outside the checked data directory are skipped). Hierarchy levels
+# compiler's job), and it cannot see consumer data layers outside the checked
+# directory (for example an off-repository secret store; hierarchy levels whose
+# datadir resolves outside the checked data directory are skipped). The module
+# data layer is read for its defaults over static `path`/`paths` levels only; a
+# module with no data layer, or whose defaults sit behind interpolated,
+# `glob`/`globs`, or `mapped_paths` levels, contributes no default and its
+# toggles fall back to unresolved. On the consumer side too, hierarchy levels
 # addressed by `glob`/`globs` or `mapped_paths` are not modeled: advisory
 # resolution covers `path`/`paths` levels only. The `manage` resolution is
 # subkey-level, i.e. deep-merge semantics (what the module's `lookup_options`
@@ -221,6 +229,48 @@ class HieraDataCheck
     end
   end
 
+  # class::param => deep-merged default value across every deployed module's
+  # own module data layer (its hiera.yaml + data dir): the lowest-priority
+  # source for the manage resolution. Static path/paths levels only; a module
+  # without a data layer, or whose data sits behind interpolated/glob/
+  # mapped_paths levels, contributes nothing (its toggles stay unresolved).
+  def module_defaults
+    @module_defaults ||= module_dirs.each_with_object({}) do |dir, acc|
+      module_layer(dir).each { |key, value| acc[key] = value }
+    end
+  end
+
+  def module_layer(dir)
+    hiera_config = File.join(dir, 'hiera.yaml')
+    return {} unless File.exist?(hiera_config)
+
+    cfg = YAML.safe_load_file(hiera_config)
+    base = File.expand_path(dir)
+    default_datadir = cfg.to_h.dig('defaults', 'datadir') || 'data'
+    files = cfg.to_h['hierarchy'].to_a.flat_map do |level|
+      datadir = File.expand_path(level['datadir'] || default_datadir, base)
+      Array(level['paths'] || level['path']).reject { |p| p.include?('%{') }
+                                            .map { |p| File.join(datadir, p) }
+    end.select { |f| File.file?(f) }
+    merge_layers(files.filter_map do |file|
+      content = YAML.safe_load_file(file, aliases: true, permitted_classes: [Date, Time, Symbol])
+      content if content.is_a?(Hash)
+    end)
+  end
+
+  # Deep-merge a list of hash layers given highest-priority first.
+  def merge_layers(values)
+    values.reverse.reduce({}) { |acc, value| deep_merge(value, acc) }
+  end
+
+  # Merge high over low: hashes merge recursively; for any non-hash the
+  # higher-priority value wins (array-union across layers is not modeled).
+  def deep_merge(high, low)
+    return high unless high.is_a?(Hash) && low.is_a?(Hash)
+
+    low.merge(high) { |_key, low_val, high_val| deep_merge(high_val, low_val) }
+  end
+
   def advisories
     @advisories ||= contexts.flat_map { |context| context_advisories(context) }.uniq
   end
@@ -231,23 +281,56 @@ class HieraDataCheck
     candidate_keys(files).filter_map do |key|
       next if offending_keys.include?(key)
 
-      # Highest-priority manage subkey wins; unresolved in-repository => silent.
-      managed = files.filter_map { |f| parsed_data[f][key] }
-                     .find { |v| v.is_a?(Hash) && v.key?('manage') }
-      next unless managed && managed['manage'] == false
+      repo_values = files.filter_map { |f| parsed_data[f][key] }
+      default = module_defaults[key]
+      consumer = merge_layers(repo_values)
+      effective = merge_layers(repo_values + [default].compact)
 
-      unenforced = files.filter_map do |file|
-        value = parsed_data[file][key]
-        subkeys = value.is_a?(Hash) ? value.keys - ['manage'] : []
-        "#{subkeys.sort.join(', ')} (#{file})" unless subkeys.empty?
-      end
-      next if unenforced.empty?
+      leaves = unenforced_leaves(consumer, effective, default, nil, [])
+      next if leaves.empty?
 
-      "'#{key}': effective 'manage' is false, so the module does not " \
-        "enforce resources from these subkeys: #{unenforced.join('; ')} — " \
-        'the module may still read some of them as shared inputs; legitimate ' \
-        'as declared state of an externally owned concern; a human judges intent'
+      grouped = leaves.group_by { |dotted, value| source_file(files, key, dotted, value) }
+                      .map { |file, entries| "#{entries.map(&:first).sort.join(', ')} (#{file})" }
+      "'#{key}': effective 'manage' is false, so the module does not enforce " \
+        "resources from these subkeys: #{grouped.sort.join('; ')} — the module " \
+        'may still read some of them as shared inputs; legitimate as declared ' \
+        'state of an externally owned concern; a human judges intent'
     end
+  end
+
+  # Consumer-set leaves ([dotted path, value]) governed by an effective
+  # manage:false whose value differs from the module default (a restatement of
+  # the default is inert and suppressed). `enclosing` is the nearest manage on
+  # the path, resolved from the effective (consumer-over-module) value.
+  def unenforced_leaves(consumer, effective, default, enclosing, path)
+    return [] unless consumer.is_a?(Hash)
+
+    enclosing = effective['manage'] if effective.is_a?(Hash) && effective.key?('manage')
+    consumer.flat_map do |key, value|
+      next [] if key == 'manage'
+
+      child_path = path + [key]
+      eff_child = effective.is_a?(Hash) ? effective[key] : nil
+      def_child = default.is_a?(Hash) ? default[key] : nil
+      if value.is_a?(Hash)
+        unenforced_leaves(value, eff_child, def_child, enclosing, child_path)
+      elsif enclosing == false && value != def_child
+        [[child_path.join('.'), value]]
+      else
+        []
+      end
+    end
+  end
+
+  # The highest-priority data file supplying this leaf: the merged value hides
+  # which layer won under first-found, so re-derive it for the advisory.
+  def source_file(files, key, dotted_path, value)
+    keys = dotted_path.split('.')
+    files.find { |f| dig_path(parsed_data[f][key], keys) == value } || files.first
+  end
+
+  def dig_path(node, keys)
+    keys.reduce(node) { |n, k| n.is_a?(Hash) ? n[k] : nil }
   end
 
   # Hash-valued class::param keys present in the given files.
