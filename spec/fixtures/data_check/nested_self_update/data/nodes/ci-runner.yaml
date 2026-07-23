@@ -1,0 +1,10 @@
+---
+# The standalone topology is managed, but the nested self-update loop toggle
+# stays at the module default (false): the loop's subkeys are not enforced.
+# apply_interval differs from the default and is flagged; apply_timeout
+# restates the default and is inert, so the advisory names only apply_interval.
+rootless_gitlab_runner::standalone:
+  manage: true
+  self_update:
+    apply_interval: '2min'
+    apply_timeout: '15min'

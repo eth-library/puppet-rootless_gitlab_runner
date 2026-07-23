@@ -1,0 +1,11 @@
+---
+# packages.sources.manage stays at the module default (false), so its subkeys
+# are not enforced. The docker location is a mirror that differs from the
+# default and is flagged; the gitlab-runner location merely restates the
+# module default and is inert, so the advisory names only the docker mirror.
+rootless_gitlab_runner::packages:
+  sources:
+    docker:
+      location: 'https://mirror.example.org/docker'
+    gitlab_runner:
+      location: 'https://packages.gitlab.com/runner/gitlab-runner/ubuntu'

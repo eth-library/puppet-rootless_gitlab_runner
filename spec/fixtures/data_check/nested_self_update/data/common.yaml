@@ -1,0 +1,3 @@
+---
+# self_update.manage is never set here: the nested loop toggle resolves from
+# the deployed module's own data layer (its default, false).

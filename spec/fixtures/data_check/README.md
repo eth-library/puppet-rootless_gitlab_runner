@@ -13,3 +13,5 @@ because the hierarchy resolves them via `%{facts.networking.hostname}`.
 | `advisory` | Struct subkeys set under `manage: false` in the common layer | The non-failing advisory fires |
 | `advisory_on` | The same, with a higher-priority node layer setting `manage: true` | Hierarchy priority suppresses the advisory |
 | `demo_modules/demo` | A minimal module whose class has a struct parameter with a `manage` subkey | The surface the advisory fixtures resolve against, kept module-independent |
+| `nested_default_sources` | `packages.sources.*` subkeys set while `sources.manage` stays at the module default | Module-default toggle resolution, nested paths, and restated-default suppression |
+| `nested_self_update` | `standalone.self_update.*` subkeys set with `standalone.manage: true` but the loop toggle at its module default | A nested toggle governs its own subkeys independently of the enclosing `manage` |
