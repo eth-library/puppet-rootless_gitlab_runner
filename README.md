@@ -280,6 +280,15 @@ endpoints. `puppetlabs/apt` is needed only by this toggle; `puppetlabs/stdlib` i
 unconditionally. Consumers add both to their Puppetfile (r10k does not resolve module metadata
 dependencies; the example skeleton carries the lines).
 
+`packages.sources.manage` and `packages.install` are independent layers: the switch adds
+the two vendor apt sources and their signing keys, and the list names what to install from
+whatever sources the host has. On a host whose content platform (orcharhino,
+Foreman/Katello) serves the packages, two shapes are supported: the platform owns the
+sources and the module installs (`sources.manage: false`, keep `install`), or the platform
+owns the packages too (`sources.manage: false`, `install: []`), with `docker-ce` and
+`gitlab-runner` becoming external prerequisites. `packages.sources.manage: true` is the
+stock-Ubuntu convenience for a host with no central content platform.
+
 #### `runner_account`
 
 The OS account the runner manager and the rootless daemon run as: `name`, an optional `group`,
