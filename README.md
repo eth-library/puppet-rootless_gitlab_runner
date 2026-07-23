@@ -24,7 +24,6 @@ daemon it depends on.
 - [Configuration contract](#configuration-contract)
   - [Managed concerns](#managed-concerns)
   - [Opt-in concerns](#opt-in-concerns)
-  - [Host-specific values](#host-specific-values)
   - [File layout](#file-layout)
   - [Declaring runners](#declaring-runners)
   - [Validating Hiera data in CI](#validating-hiera-data-in-ci)
@@ -293,6 +292,13 @@ it. The subordinate UID/GID ranges rootless Docker needs are owned by
 never managed, beyond the no-detach-netns drop-in the module places under
 `~/.config/systemd/user/`.
 
+`uid` has no default: it is host data, set per host in the Hiera node file
+([`host.example.yaml`](examples/data/nodes/host.example.yaml) sets it), and the rootless
+runtime paths (`/run/user/<uid>`, the docker socket) derive from it. An apply that needs the
+uid and finds it unset fails at compile time with a clear message; every concern but the
+package layer needs it (`runner_account.manage`, `rootless_docker.manage`,
+`runner_service.manage` or `standalone.manage` on, or a `socket_mount` runner).
+
 `group` names the account's primary group and defaults to `name`. Set it for an externally
 provisioned account whose primary group is named differently (e.g. account `ci-worker`, group `ci`):
 it feeds every group ownership the module manages — the group resource and the user's primary
@@ -363,6 +369,10 @@ isolated Puppet state directories are `standalone.puppet_confdir`/`standalone.pu
 and `standalone.puppet_bindir` locates the `puppet`/`r10k` executables for the timer-driven,
 non-login apply.
 
+`control_repository_path` (default `/opt/gitlab-runner-infra`) is host data too: it names
+wherever the checkout lives on that host. A wrong path is caught at runtime, by the
+self-update fetch and the healthcheck's staleness assertion, not at compile time.
+
 #### `standalone.self_update`
 
 With `standalone.self_update.manage` on — only valid on a standalone host: enabling it with
@@ -384,22 +394,6 @@ The service sets `HOME=/root` (git/SSH need it) and an explicit `TimeoutStartSec
 success.
 
 Never enable it where a Puppet server or r10k already deploys the host: one deploy agent per host.
-
-### Host-specific values
-
-Beyond the toggles, two contract values are **host data** — set per host in the Hiera node
-file ([`host.example.yaml`](examples/data/nodes/host.example.yaml) shows both).
-`runner_account.uid` has no default and the apply **fails at compile time with a clear
-message** when it is unset but needed; `standalone.control_repository_path` is defaulted but
-host-specific:
-
-| Hiera key | Description | Default |
-|---|---|---|
-| `runner_account.uid` | Numeric uid of the runner account; the rootless runtime paths (`/run/user/<uid>`, the docker socket) derive from it | none — required when `runner_account.manage`, `rootless_docker.manage` or `standalone.manage` is on, or for a `socket_mount` runner |
-| `standalone.control_repository_path` | Checkout of the control repository on the host (the apply and self-update target) | `/opt/gitlab-runner-infra` |
-
-A wrong `standalone.control_repository_path` is caught at runtime — by the self-update
-service's fetch and the healthcheck's staleness assertion — not at compile time.
 
 ### File layout
 
