@@ -149,9 +149,11 @@
 #   running the daemon unprivileged.
 # @option rootless_docker [Boolean] :manage
 #   Whether to bring up the rootless docker user daemon: provision the
-#   subordinate UID/GID ranges (an existing entry is never overwritten, and
-#   the runner account may be owned elsewhere), enable lingering and run
-#   `dockerd-rootless-setuptool.sh install` (guarded, as the runner user),
+#   subordinate UID/GID ranges and enforce `subid_count` as a grow-only minimum
+#   width (a module-owned range narrower than declared is widened in place and
+#   the rootless daemon restarted; a foreign or already-wider range is never
+#   rewritten, and the runner account may be owned elsewhere), enable lingering
+#   and run `dockerd-rootless-setuptool.sh install` (guarded, as the runner user),
 #   behind a fail-loud preflight that asserts the prerequisites instead of
 #   half-installing. Also stops and masks the rootful system
 #   `docker.service`/`docker.socket` and `containerd.service`, which a fresh
@@ -162,11 +164,14 @@
 #   Default false.
 # @option rootless_docker [Integer[1]] :subid_start
 #   First subordinate UID/GID allocated to the runner account (field two of
-#   the `/etc/subuid` entry format, per `subid(5)`). Default 231072.
+#   the `/etc/subuid` entry format, per `subid(5)`). Default 231072. shadow's
+#   own auto-allocation hands out 65536-wide ranges from 100000, so the third
+#   auto-allocated user on a host starts at 231072; a range overlapping another
+#   user's is warned about at compile time.
 # @option rootless_docker [Integer[65536]] :subid_count
 #   Number of subordinate UIDs/GIDs allocated (field three of the entry;
-#   rootless docker needs at least 65536). Default 165536, which also covers
-#   BuildKit's rootless image layout.
+#   rootless docker needs at least 65536), enforced as a grow-only minimum
+#   width. Default 165536, which also covers BuildKit's rootless image layout.
 # @param runner_service
 #   The systemd system service running the runner manager, privilege-dropped
 #   to the runner account.

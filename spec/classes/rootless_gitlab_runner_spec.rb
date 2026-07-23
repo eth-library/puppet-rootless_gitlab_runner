@@ -2,6 +2,17 @@ require 'spec_helper'
 require 'yaml'
 require 'deep_merge'
 
+# rspec-puppet exposes no matcher for compile-time warning() output, so a
+# registered Puppet log destination collects warning messages for the sub-ID
+# advisory tests (see the module_warnings helper). Module-global by Puppet's
+# design; the helper clears it before each capture.
+RGR_WARNINGS = [] # rubocop:disable Style/MutableConstant
+Puppet::Util::Log.newdesttype(:rgr_capture) do
+  def handle(msg)
+    RGR_WARNINGS << msg.message if msg.level == :warning
+  end
+end
+
 # puppetlabs-apt compiles only on Debian-family facts; the suite otherwise runs
 # factless, so the apt-enabled and example contexts pin the single supported
 # OS's facts. Derived from metadata.json via rspec-puppet-facts / facterdb (one
@@ -60,6 +71,27 @@ describe 'rootless_gitlab_runner' do
   # from it) plus any extra keys. Most contexts need only the uid.
   def account_with_uid(uid, extra = {})
     struct_param('runner_account', { 'uid' => uid }.merge(extra))
+  end
+
+  # A structured subid fact for the runner user (and optionally foreign owners),
+  # the shape lib/puppet_x/rootless_gitlab_runner/subids.rb produces. Both files
+  # carry the runner ranges; `others` adds foreign owners for the overlap case.
+  def subid_facts(runner_ranges, others = {})
+    owners = { 'gitlab-runner' => runner_ranges }.merge(others)
+    { 'rootless_gitlab_runner_subids' => { 'subuid' => owners, 'subgid' => owners } }
+  end
+
+  # This module's compile-time warning() lines. Attach the capture destination,
+  # force the one memoized compile, then filter to the module's own messages.
+  # Call before any other catalogue access in the example, so the destination is
+  # live when warnings fire (rspec-puppet caches the catalog, compiling once).
+  def module_warnings
+    RGR_WARNINGS.clear
+    Puppet::Util::Log.newdestination(:rgr_capture)
+    catalogue
+    RGR_WARNINGS.grep(/\Arootless_gitlab_runner:/)
+  ensure
+    Puppet::Util::Log.close(:rgr_capture)
   end
 
   context 'with defaults' do
@@ -628,6 +660,143 @@ describe 'rootless_gitlab_runner' do
         .with_command('usermod --add-subuids 300000-431071 gitlab-runner')
       is_expected.to contain_exec('rootless_gitlab_runner subgid entry')
         .with_command('usermod --add-subgids 300000-431071 gitlab-runner')
+    end
+  end
+
+  # sub-ID minimum-width enforcement. The structured subid fact makes /etc/subuid
+  # and /etc/subgid state visible to the catalog, so the class decides create /
+  # widen / advise from real host state that rspec and --noop cannot see. Each
+  # case supplies the fact directly.
+  context 'with rootless_docker.manage and a fact-visible subid state' do
+    let(:base_params) do
+      { 'rootless_docker' => struct_param('rootless_docker', 'manage' => true),
+        'runner_account'  => account_with_uid(4242) }
+    end
+
+    context 'a module-owned range narrower than declared' do
+      let(:params) { base_params }
+      let(:facts)  { subid_facts([{ 'start' => 231_072, 'count' => 65_536 }]) }
+
+      { 'subuid' => ['--del-subuids', '--add-subuids'],
+        'subgid' => ['--del-subgids', '--add-subgids'] }.each do |f, (del, add)|
+        it "widens #{f} in place with a literal usermod, guarded on the exact current line" do
+          is_expected.to contain_exec("rootless_gitlab_runner #{f} widen").with(
+            'command'  => "usermod #{del} 231072-296607 #{add} 231072-396607 gitlab-runner",
+            'onlyif'   => "grep -qxF 'gitlab-runner:231072:65536' /etc/#{f}",
+            'provider' => 'shell',
+          ).that_comes_before('Exec[rootless_gitlab_runner preflight]')
+        end
+
+        it "fires the rootless-daemon restart from the #{f} widen" do
+          is_expected.to contain_exec("rootless_gitlab_runner #{f} widen")
+            .that_notifies('Exec[rootless_gitlab_runner rootless docker restart (subid widen)]')
+        end
+      end
+
+      it 'restarts the rootless daemon refreshonly as the runner user, after bring-up' do
+        is_expected.to contain_exec('rootless_gitlab_runner rootless docker restart (subid widen)').with(
+          'command'     => 'systemctl --user try-restart docker',
+          'user'        => 'gitlab-runner',
+          'refreshonly' => true,
+          'environment' => [
+            'HOME=/home/gitlab-runner',
+            'USER=gitlab-runner',
+            'XDG_RUNTIME_DIR=/run/user/4242',
+            'DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/4242/bus',
+          ],
+        ).that_requires('Exec[rootless_gitlab_runner setuptool install]')
+      end
+
+      it 'sums against the declared count in the preflight' do
+        is_expected.to contain_exec('rootless_gitlab_runner preflight')
+          .with_unless(%r{-v need=165536 '\$1==u\{sum\+=\$3\} END\{exit !\(sum>=need\)\}' /etc/subuid})
+          .with_command(%r{subuid\+subgid totalling >= 165536 for gitlab-runner})
+      end
+
+      it 'emits no advisory while it converges the range' do
+        expect(module_warnings).to be_empty
+      end
+    end
+
+    context 'an exact-match range' do
+      let(:params) { base_params }
+      let(:facts)  { subid_facts([{ 'start' => 231_072, 'count' => 165_536 }]) }
+
+      it 'declares no widen and stays silent' do
+        expect(module_warnings).to be_empty
+        %w[subuid subgid].each do |f|
+          is_expected.not_to contain_exec("rootless_gitlab_runner #{f} widen")
+        end
+      end
+    end
+
+    context 'a module-owned range wider than declared' do
+      let(:params) { base_params }
+      let(:facts)  { subid_facts([{ 'start' => 231_072, 'count' => 262_144 }]) }
+
+      it 'never shrinks it: no widen, and a wider-than-declared warning' do
+        expect(module_warnings).to include(
+          match(%r{/etc/subuid grants gitlab-runner 231072:262144, wider than the declared subid_count 165536}),
+        )
+        is_expected.not_to contain_exec('rootless_gitlab_runner subuid widen')
+      end
+    end
+
+    context 'a foreign-start range wide enough in sum' do
+      let(:params) { base_params }
+      let(:facts)  { subid_facts([{ 'start' => 500_000, 'count' => 200_000 }]) }
+
+      it 'leaves it untouched and warns that data does not mirror the host' do
+        expect(module_warnings).to include(
+          match(%r{/etc/subuid for gitlab-runner does not mirror the declared range 231072:165536}),
+        )
+        is_expected.not_to contain_exec('rootless_gitlab_runner subuid widen')
+      end
+    end
+
+    context 'a foreign-start range too narrow' do
+      let(:params) { base_params }
+      let(:facts)  { subid_facts([{ 'start' => 500_000, 'count' => 1000 }]) }
+
+      it 'stays silent at compile time: the preflight fails loud instead' do
+        expect(module_warnings).to be_empty
+        is_expected.not_to contain_exec('rootless_gitlab_runner subuid widen')
+      end
+    end
+
+    context 'the declared range overlapping another user' do
+      let(:params) { base_params }
+      let(:facts) do
+        subid_facts([{ 'start' => 231_072, 'count' => 165_536 }],
+                    'sophie' => [{ 'start' => 300_000, 'count' => 65_536 }])
+      end
+
+      it 'warns that the two users would share container UIDs' do
+        expect(module_warnings).to include(
+          match(%r{declared range 231072-396607 overlaps sophie's 300000-365535 in /etc/subuid}),
+        )
+      end
+    end
+  end
+
+  context 'with rootless_docker.manage, a custom declared range and a narrower host range' do
+    let(:params) do
+      { 'rootless_docker' => struct_param('rootless_docker', 'manage' => true,
+                                                            'subid_start' => 300_000, 'subid_count' => 200_000),
+        'runner_account'  => account_with_uid(4242, 'manage' => true) }
+    end
+    let(:facts) { subid_facts([{ 'start' => 300_000, 'count' => 70_000 }]) }
+
+    it 'computes both inclusive bounds from the fact width and the declared width' do
+      is_expected.to contain_exec('rootless_gitlab_runner subuid widen')
+        .with_command('usermod --del-subuids 300000-369999 --add-subuids 300000-499999 gitlab-runner')
+        .with_onlyif("grep -qxF 'gitlab-runner:300000:70000' /etc/subuid")
+    end
+
+    it 'carries the declared non-default count into the summed preflight' do
+      is_expected.to contain_exec('rootless_gitlab_runner preflight')
+        .with_unless(%r{-v need=200000 '\$1==u\{sum\+=\$3\} END\{exit !\(sum>=need\)\}' /etc/subuid})
+        .with_command(%r{subuid\+subgid totalling >= 200000})
     end
   end
 

@@ -305,7 +305,13 @@ by construction where the module creates the account.
 
 With `rootless_docker.manage` on, the module brings up the rootless-Docker user daemon:
 provisions the subordinate UID/GID ranges the daemon needs (`subid_start`/`subid_count`,
-default `231072`/`165536`; an existing entry is never overwritten), enables lingering and runs
+default `231072`/`165536`) and enforces `subid_count` as a grow-only minimum width. A
+module-owned range at the declared start narrower than `subid_count` is widened in place (a
+single locked `usermod` del-before-add) and the rootless daemon restarted so its user namespace
+picks up the new width; a foreign or already-wider range is never rewritten (a too-narrow
+foreign range fails the preflight, a wide-enough one warns). Widening an in-service host
+interrupts running jobs (rootless mode has no live-restore), so it is best scheduled around
+them; CI-side job `retry` covers a job caught by the restart. It then enables lingering and runs
 `dockerd-rootless-setuptool.sh install` [\[4\]](#ref-4) as the runner user (guarded on installed state, so it
 runs only until the rootless daemon's user unit exists). The ranges are provisioned for the
 runner user whether the module owns the account ([`runner_account`](#runner_account))
@@ -318,8 +324,8 @@ it is the `no-detach-netns` drop-in, layered on top as a systemd override so bot
 the other changing.
 
 The whole chain sits behind a fail-loud preflight that asserts the prerequisites (`newuidmap` present,
-subordinate IDs of at least 65,536, lingering enabled, cgroup v2) and aborts with a clear
-message — only active when `rootless_docker.manage` is `true`. On a host where everything is already in place the
+the runner user's subordinate IDs totalling at least the declared `subid_count`, lingering enabled,
+cgroup v2) and aborts with a clear message — only active when `rootless_docker.manage` is `true`. On a host where everything is already in place the
 chain is a no-op.
 
 The toggle also **stops and masks the rootful system
