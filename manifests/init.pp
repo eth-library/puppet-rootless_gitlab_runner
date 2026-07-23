@@ -134,7 +134,7 @@
 #   Packages to ensure installed. The empty default installs nothing. Install
 #   only: the module never removes packages absent from the list and never
 #   pins or upgrades.
-# @option packages [Hash] :sources
+# @option packages [Struct[{ manage => Boolean, docker => Apt_source, gitlab_runner => Apt_source }]] :sources
 #   The apt sources the `install` list installs from (Docker's and GitLab
 #   Runner's, via `puppetlabs/apt`). `sources.manage` (default false) decides
 #   ownership: keep it off where apt sources are owned elsewhere (central
