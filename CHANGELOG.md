@@ -20,6 +20,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - The apply script now installs on any declared-standalone host (`standalone.manage: true`), not only with the self-update loop, so manual applies and the loop share the same single apply command; enabling the loop on a host not declared standalone fails at compile time.
 - Freshly provisioned hosts now get a 165536-wide subordinate-ID range, which satisfies the ID-mapping requirement of nested rootless BuildKit builds.
 - Subordinate UID/GID ranges are now provisioned by `rootless_docker.manage`, together with the other rootless-Docker prerequisites, instead of by the runner-account toggle: rootless Docker can now be brought up on a host whose runner account is owned by another system. An existing range entry is never overwritten, and `runner_account.manage` keeps owning the group, user, and home.
+- The managed runner service's `DOCKER_HOST` is now module-owned and derived from `runner_account.uid`; `runner_service.environment` carries additional variables only and rejects a `DOCKER_HOST` line, and a managed service requires `runner_account.uid`.
 
 ### Removed
 
@@ -30,6 +31,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Fixed
 
+- Clearing `runner_service.environment` through data can no longer leave the runner manager without `DOCKER_HOST`; the derived socket is always present.
 - With `packages.sources.manage` on, repeated applies stop churning apt: an unchanged repository signing key is now a true no-op (no keyring rewrite, no needless `apt-get update`), while a genuine key rotation is still picked up from the vendor's rolling key endpoint and refreshes the apt index.
 
 ## [1.0.0] - 2026-07-09

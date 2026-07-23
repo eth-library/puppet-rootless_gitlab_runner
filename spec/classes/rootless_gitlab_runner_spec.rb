@@ -349,11 +349,12 @@ describe 'rootless_gitlab_runner' do
     end
 
     it 'unions array subkeys across layers and removes an element via the knockout prefix' do
-      # environment is set in both layers: the common layer's DOCKER_HOST line
-      # survives the merge (arrays union under deep merge), while the node
-      # layer's '--DEBUG=1' knocks the common DEBUG=1 element out.
+      # environment is set in both layers: the common TRACE=1 survives the union,
+      # while the node layer's '--DEBUG=1' removes the common DEBUG=1. DOCKER_HOST
+      # is module-owned and renders from the merged uid (4242) alongside it.
       is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
-        .with_content(%r{^Environment=DOCKER_HOST=unix:///run/user/2000/docker\.sock$})
+        .with_content(%r{^Environment=DOCKER_HOST=unix:///run/user/4242/docker\.sock$})
+        .with_content(%r{^Environment=TRACE=1$})
         .without_content(%r{DEBUG=1})
     end
 
@@ -361,6 +362,23 @@ describe 'rootless_gitlab_runner' do
       expect(catalogue.resource('File', '/etc/gitlab-runner/config.toml').sensitive_parameters)
         .to include(:content)
       expect(rendered_config).to match(%r{token = "glrt-DEEP-MERGE-TOKEN"})
+    end
+  end
+
+  # #26: a fleet layer sets an environment line, the node layer removes it with
+  # the '--' knockout prefix, and the deep merge yields an empty array. Because
+  # DOCKER_HOST is module-owned, the derived line renders regardless, so an
+  # emptied environment can no longer leave the managed service without a socket.
+  context 'an environment emptied through the knockout prefix' do
+    let(:node) { 'empty-env.example.org' }
+    let(:hiera_config) { File.expand_path(File.join(__dir__, '..', 'fixtures', 'hiera', 'empty_environment.yaml')) }
+
+    it { is_expected.to compile.with_all_deps }
+
+    it 'still renders the derived DOCKER_HOST when environment empties to []' do
+      is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
+        .with_content(%r{^Environment=DOCKER_HOST=unix:///run/user/2000/docker\.sock$})
+        .without_content(%r{DEBUG=1})
     end
   end
 
@@ -403,10 +421,10 @@ describe 'rootless_gitlab_runner' do
       it { is_expected.to compile.and_raise_error(%r{set runner_account\.uid}) }
     end
 
-    context 'with the runner service and no derivable DOCKER_HOST' do
+    context 'with the runner service managed' do
       let(:params) { { 'runner_service' => struct_param('runner_service', 'manage' => true) } }
 
-      it { is_expected.to compile.and_raise_error(%r{needs DOCKER_HOST}) }
+      it { is_expected.to compile.and_raise_error(%r{runner_service\.manage requires runner_account\.uid}) }
     end
 
     context 'with a secret store present and an unresolvable token_key' do
@@ -695,6 +713,37 @@ describe 'rootless_gitlab_runner' do
           .with_content(%r{^TimeoutStopSec=7200$})
       end
     end
+  end
+
+  # runner_service.environment is a passthrough for additional Environment=
+  # lines; DOCKER_HOST is module-owned and rendered from the uid, so it renders
+  # alongside the passthrough vars rather than being supplied through them.
+  context 'with runner_service.environment passthrough vars' do
+    let(:params) do
+      { 'runner_service' => struct_param('runner_service', 'manage' => true,
+                                                           'environment' => ['DEBUG=1', 'BUILDX_NO_DEFAULT_ATTESTATIONS=1']),
+        'runner_account' => account_with_uid(4242) }
+    end
+
+    it 'renders the derived DOCKER_HOST alongside the passthrough vars' do
+      is_expected.to contain_file('/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf')
+        .with_content(%r{^Environment=DOCKER_HOST=unix:///run/user/4242/docker\.sock$})
+        .with_content(%r{^Environment=DEBUG=1$})
+        .with_content(%r{^Environment=BUILDX_NO_DEFAULT_ATTESTATIONS=1$})
+    end
+  end
+
+  # DOCKER_HOST is derived, not configured: a DOCKER_HOST line in the passthrough
+  # would diverge from the socket the healthcheck and socket_mount use, so it
+  # fails the compile rather than rendering a manager pointed elsewhere.
+  context 'with a DOCKER_HOST line in runner_service.environment' do
+    let(:params) do
+      { 'runner_service' => struct_param('runner_service', 'manage' => true,
+                                                           'environment' => ['DOCKER_HOST=unix:///run/user/9/docker.sock']),
+        'runner_account' => account_with_uid(4242) }
+    end
+
+    it { is_expected.to compile.and_raise_error(%r{do not set DOCKER_HOST in runner_service\.environment}) }
   end
 
   # The ownership-derivation contract (the 1.x latent wrong-owner bug): a
@@ -1047,7 +1096,7 @@ describe 'rootless_gitlab_runner' do
         {
           'runner_service' => struct_param('runner_service',
                                            'manage'      => true,
-                                           'environment' => ["DOCKER_HOST=unix:///run/x\nExecStartPre=/bin/evil"]),
+                                           'environment' => ["DEBUG=1\nExecStartPre=/bin/evil"]),
           'runner_account' => account_with_uid(2000),
         }
       end

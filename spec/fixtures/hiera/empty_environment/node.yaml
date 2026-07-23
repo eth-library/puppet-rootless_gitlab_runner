@@ -1,0 +1,8 @@
+---
+# Node layer over the common layer: '--' removes the one environment line the
+# fleet layer set, leaving environment as an empty array. DOCKER_HOST is
+# module-owned, so the derived line still renders (#26): an emptied environment
+# can no longer leave the managed service without a daemon socket.
+rootless_gitlab_runner::runner_service:
+  environment:
+    - '--DEBUG=1'

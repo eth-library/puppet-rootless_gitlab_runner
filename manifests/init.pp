@@ -69,9 +69,10 @@
 #   key `MaxUploadedArchiveSize` (Integer, default 0)),
 #   `allowed_images` (Array[String]), `allowed_pull_policies` (Array[String]).
 #   Tokens are merged in from `runner_tokens[token_key]` and must not appear
-#   here. `host` is only for an externally managed daemon at a non-derived
-#   path: where the module manages the runner service, the drop-in's
-#   `DOCKER_HOST` already points the executor at the derived rootless socket.
+#   here. `host` is a passthrough for GitLab Runner's own `[runners.docker]`
+#   host setting, pointing one runner's jobs at a specific daemon socket; the
+#   managed runner service's own `DOCKER_HOST` is derived from the uid and set
+#   independently of it.
 # @param runner_defaults
 #   Hash merged under every `runners` entry (`$runner_defaults + $runner`,
 #   keys set on the entry win), so multi-runner data does not repeat `url`,
@@ -123,9 +124,9 @@
 #   something a module can sensibly invent. It derives the rootless runtime
 #   paths (`/run/user/<uid>`, the docker socket) and is enforced on the user
 #   when `runner_account.manage` is on; the apply fails loud when it is unset
-#   but needed — with `runner_account.manage`, `rootless_docker.manage` or
-#   `standalone.self_update.manage` on, or to derive the docker socket path
-#   for a `socket_mount` runner.
+#   but needed — with `runner_account.manage`, `rootless_docker.manage`,
+#   `runner_service.manage` or `standalone.self_update.manage` on, or to derive
+#   the docker socket path for a `socket_mount` runner.
 # @option runner_account [Stdlib::Absolutepath] :home
 #   Home directory of the runner account. Default `/home/gitlab-runner`.
 # @param packages
@@ -174,11 +175,13 @@
 #   drop-in, and the configuration directory's mode so a privilege-dropped
 #   manager can traverse to its configuration file. Default false.
 # @option runner_service [Optional[Array[Pattern[/\A[^\r\n]+\z/]]]] :environment
-#   `Environment=` lines (KEY=value) rendered into the service drop-in. When
-#   unset, defaults to pointing DOCKER_HOST at the rootless docker socket
-#   derived from `runner_account.uid`. The `Pattern` enforces the type: each
-#   line must be non-empty and single-line — a value containing a newline is
-#   rejected, so it cannot inject an extra systemd directive into the drop-in.
+#   Additional `Environment=` lines (KEY=value) rendered into the service
+#   drop-in, alongside the module-owned `DOCKER_HOST` line. `DOCKER_HOST` itself
+#   is derived from `runner_account.uid` and cannot be set here: a `DOCKER_HOST`
+#   line fails the compile, and a runner whose jobs need a different daemon uses
+#   the per-runner `host` key. The `Pattern` enforces the type: each line must be
+#   non-empty and single-line, so a value containing a newline is rejected and
+#   cannot inject an extra systemd directive into the drop-in.
 # @option runner_service [Optional[Variant[Integer[0], String[1]]]] :timeout_stop_sec
 #   `TimeoutStopSec=` written into the manager service drop-in — how long
 #   systemd waits for a graceful drain before escalating to `SIGKILL`. Unset
@@ -311,13 +314,13 @@ class rootless_gitlab_runner (
   # Defaults merged under every runner entry; keys set on the entry win.
   $effective_runners = $runners.map |$r| { $runner_defaults + $r }
 
-  # Rootless runtime paths derived from the uid where known: the module
-  # itself installs the daemon socket at /run/user/<uid>/docker.sock, so the
-  # path is derivation, not configuration. The one escape hatch is narrow:
-  # runner_service.environment can point the manager service's DOCKER_HOST at
-  # a socket elsewhere. Nothing else follows it — the socket_mount volume and
-  # the healthcheck probe keep using the derived path — so it is not a general
-  # "external daemon" switch.
+  # Rootless runtime paths derived from the uid where known: the module itself
+  # installs the daemon socket at /run/user/<uid>/docker.sock, so the path is
+  # derivation, not configuration. It is the single source of the manager's
+  # DOCKER_HOST, the socket_mount volume, and the healthcheck probe, so the
+  # three never diverge. A runner whose jobs must use a different, externally
+  # managed daemon sets that per-runner via `host`, which config.toml carries
+  # natively; the manager's DOCKER_HOST is not a general external-daemon switch.
   if $runner_account['uid'] =~ Integer {
     $runtime_dir = "/run/user/${runner_account['uid']}"
     $socket_path = "${runtime_dir}/docker.sock"
@@ -336,24 +339,41 @@ class rootless_gitlab_runner (
     "DBUS_SESSION_BUS_ADDRESS=unix:path=${runtime_dir}/bus",
   ]
 
-  if $runner_service['manage'] and $socket_path =~ Undef and $runner_service['environment'] =~ Undef {
+  # The managed runner service always connects to the derived rootless docker
+  # socket, so it needs the uid that socket derives from. DOCKER_HOST is
+  # module-owned: there is no data-side way to point the manager elsewhere,
+  # because the healthcheck and socket_mount stay fixed to the derived socket
+  # and a hand-set DOCKER_HOST would silently diverge from them.
+  if $runner_service['manage'] and $socket_path =~ Undef {
     fail(join([
-      'rootless_gitlab_runner: the privilege-dropped runner service needs DOCKER_HOST — ',
-      'set runner_account.uid or runner_service.environment',
+      'rootless_gitlab_runner: runner_service.manage requires runner_account.uid — ',
+      'the managed service connects to the rootless docker socket derived from it',
     ]))
   }
 
-  # The inner `undef => []` arm (environment unset and no derivable socket) is
-  # reached only when runner_service.manage is off: the fail-loud guard above
-  # rejects that exact combination while the service is managed. So [] is the
-  # never-consumed value that keeps the selector total — service.pp renders the
-  # drop-in only under manage — not a deliberately empty Environment.
-  $real_service_environment = $runner_service['environment'] ? {
-    undef   => $socket_path ? {
-      undef   => [],
-      default => ["DOCKER_HOST=unix://${socket_path}"],
-    },
+  # DOCKER_HOST is derived, not configured: reject it in the environment
+  # passthrough so a hand-set value cannot diverge from the derived socket the
+  # healthcheck and socket_mount use. runner_service.environment is for any
+  # other Environment= lines the manager needs.
+  $service_environment = $runner_service['environment'] ? {
+    undef   => [],
     default => $runner_service['environment'],
+  }
+  if $runner_service['manage'] and $service_environment.any |$line| { $line =~ /\ADOCKER_HOST=/ } {
+    fail(join([
+      'rootless_gitlab_runner: do not set DOCKER_HOST in runner_service.environment — ',
+      'it is derived from runner_account.uid; a runner needing another daemon uses host',
+    ]))
+  }
+
+  # The manager's Environment= lines: the derived DOCKER_HOST the executor uses
+  # to reach the rootless daemon, followed by the passthrough vars. When the
+  # service is unmanaged $socket_path may be undef; the guard above rejects that
+  # under manage, so the undef arm is the never-rendered value that keeps the
+  # selector total (service.pp renders the drop-in only under manage).
+  $real_service_environment = $socket_path ? {
+    undef   => $service_environment,
+    default => ["DOCKER_HOST=unix://${socket_path}"] + $service_environment,
   }
 
   # The runner manager's systemd unit name is the one the gitlab-runner package

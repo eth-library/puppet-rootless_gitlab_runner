@@ -1,0 +1,18 @@
+---
+# Hiera config for the #26 emptied-environment test: a two-layer consumer-shaped
+# hierarchy (node over common). The common layer sets one environment line and
+# the account uid; the node layer removes that line with the '--' prefix, leaving
+# environment as an empty array. DOCKER_HOST is module-owned, so the derived line
+# still renders. datadir is relative to this file's directory.
+version: 5
+
+defaults:
+  data_hash: yaml_data
+
+hierarchy:
+  - name: 'Consumer per-node data'
+    path: 'node.yaml'
+    datadir: 'empty_environment'
+  - name: 'Consumer common data'
+    path: 'common.yaml'
+    datadir: 'empty_environment'

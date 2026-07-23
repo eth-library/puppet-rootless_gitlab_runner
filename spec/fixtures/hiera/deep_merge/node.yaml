@@ -2,7 +2,8 @@
 # Node layer over the common layer: a scalar subkey set here wins (uid), and
 # an array subkey unions with the lower layer, where a '--'-prefixed element
 # knocks the matching common-layer element out (DEBUG=1 disappears while the
-# common DOCKER_HOST line survives).
+# common TRACE=1 line survives). DOCKER_HOST is module-owned, so the drop-in's
+# DOCKER_HOST derives from this uid regardless of the environment lines.
 rootless_gitlab_runner::runner_account:
   uid: 4242
 rootless_gitlab_runner::runner_service:

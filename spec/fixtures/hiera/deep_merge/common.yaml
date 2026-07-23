@@ -9,8 +9,8 @@ rootless_gitlab_runner::rootless_docker:
 rootless_gitlab_runner::runner_service:
   manage: true
   environment:
-    - 'DOCKER_HOST=unix:///run/user/2000/docker.sock'
     - 'DEBUG=1'
+    - 'TRACE=1'
 rootless_gitlab_runner::runner_tokens:
   runner_a: 'glrt-DEEP-MERGE-TOKEN'
 rootless_gitlab_runner::runners:

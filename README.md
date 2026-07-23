@@ -178,9 +178,9 @@ surfaces as a raw Puppet or host error rather than the module's clear preflight 
   newer (jammy ships 5.15). On older kernels the fallback is `fuse-overlayfs` [\[17\]](#ref-17)
   (kernel 4.18 or newer, plus the `fuse-overlayfs` package).
 - **Daemon connection (`DOCKER_HOST`):** [\[18\]](#ref-18) Required for every rootless job: it is how the runner
-  manager reaches the rootless daemon to create job containers. Set
-  `DOCKER_HOST=unix:///run/user/<uid>/docker.sock` in the runner service environment, equivalently
-  the `host` setting under `[runners.docker]`. This is distinct from bind-mounting the socket into a
+  manager reaches the rootless daemon to create job containers. Where the module manages the runner
+  service it sets this automatically, deriving `DOCKER_HOST=unix:///run/user/<uid>/docker.sock` from
+  `runner_account.uid`. This is distinct from bind-mounting the socket into a
   job (`socket_mount`), which only jobs that drive Docker themselves need (for example
   `docker buildx`, whose default driver also builds through the daemon), not the runner to start
   containers.
@@ -333,10 +333,12 @@ With `runner_service.manage` on, the module owns the `gitlab-runner` system serv
 systemd drop-in for it (`/etc/systemd/system/gitlab-runner.service.d/10-rootless.conf`), and
 the mode on `/etc/gitlab-runner` so the privilege-dropped manager can read its own config. The
 drop-in runs the manager privilege-dropped as the runner account — that is the module's
-posture, not a knob — with `DOCKER_HOST` pointed at the derived rootless docker socket;
-`runner_service.environment` overrides the environment lines rendered into the drop-in, and
-`runner_service.timeout_stop_sec` sets the graceful-drain window
-([Restarts and graceful shutdown](#restarts-and-graceful-shutdown)).
+posture, not a knob — with `DOCKER_HOST` derived from `runner_account.uid`, so a managed
+service requires that uid. `DOCKER_HOST` is module-owned and the same socket the healthcheck and
+`socket_mount` use; `runner_service.environment` adds any further `Environment=` lines alongside
+it (a `DOCKER_HOST` line there fails the compile; a runner whose jobs need a different daemon uses
+the per-runner `host` key instead). `runner_service.timeout_stop_sec` sets the graceful-drain
+window ([Restarts and graceful shutdown](#restarts-and-graceful-shutdown)).
 
 #### `standalone`
 
