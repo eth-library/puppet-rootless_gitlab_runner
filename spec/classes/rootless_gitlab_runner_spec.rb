@@ -327,7 +327,7 @@ describe 'rootless_gitlab_runner' do
 
     it 'installs the apply script for the declared-standalone example host' do
       is_expected.to contain_file('/usr/local/sbin/rootless-gitlab-runner-apply')
-        .with_content(%r{"/opt/runner-infra/puppet/manifests/site\.pp"})
+        .with_content(%r{"/opt/gitlab-runner-infra/puppet/manifests/site\.pp"})
     end
 
     context 'with examples/secrets.example.yaml tokens' do

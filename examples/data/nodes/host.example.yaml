@@ -1,7 +1,8 @@
 ---
 # Example host data for a standalone host: every ownership toggle is on except the standalone
-# self-update loop, which stays opt-in because it needs the Self-update prerequisites provisioned
-# first (see the README). The other toggles bring the host up from zero and keep it converged.
+# self-update loop, which stays opt-in because it needs the self-update prerequisites provisioned
+# first (see the module's docs/standalone.md). The other toggles bring the host up from zero and
+# keep it converged.
 # Copy to nodes/<hostname>.yaml and adjust. No tokens here; runner tokens live in the
 # off-repository secret store (/etc/gitlab-runner-infra/secrets.yaml, root 0600) and are merged in
 # at apply time via each runner's token_key. Struct parameters merge deep with the module
@@ -49,9 +50,10 @@ rootless_gitlab_runner::runner_service:
 
 # ── standalone topology, with the optional self-update loop inside ──
 rootless_gitlab_runner::standalone:
+  # Standalone only — omit this whole block on a fleet host.
   manage: true
   # Checkout of this control repository on the host (the apply target).
-  control_repository_path: '/opt/runner-infra'
-  # The loop stays opt-in: self_update manage true needs the Self-update
-  # prerequisites (see the README) provisioned first; never enable it on a
-  # fleet host.
+  control_repository_path: '/opt/gitlab-runner-infra'
+  # The loop stays opt-in: self_update manage true needs the self-update
+  # prerequisites (see the module's docs/standalone.md) provisioned first;
+  # never enable it on a fleet host.
