@@ -677,12 +677,11 @@ describe 'rootless_gitlab_runner' do
       let(:params) { base_params }
       let(:facts)  { subid_facts([{ 'start' => 231_072, 'count' => 65_536 }]) }
 
-      { 'subuid' => ['--del-subuids', '--add-subuids'],
-        'subgid' => ['--del-subgids', '--add-subgids'] }.each do |f, (del, add)|
-        it "widens #{f} in place with a literal usermod, guarded on the exact current line" do
+      { 'subuid' => '--add-subuids', 'subgid' => '--add-subgids' }.each do |f, add|
+        it "widens #{f} by adding only the missing tail, guarded on the covered width" do
           is_expected.to contain_exec("rootless_gitlab_runner #{f} widen").with(
-            'command'  => "usermod #{del} 231072-296607 #{add} 231072-396607 gitlab-runner",
-            'onlyif'   => "grep -qxF 'gitlab-runner:231072:65536' /etc/#{f}",
+            'command'  => "usermod #{add} 296608-396607 gitlab-runner",
+            'onlyif'   => "awk -F: -v u='gitlab-runner' '$1==u{s+=$3} END{exit !(s==65536)}' /etc/#{f}",
             'provider' => 'shell',
           ).that_comes_before('Exec[rootless_gitlab_runner preflight]')
         end
@@ -777,6 +776,55 @@ describe 'rootless_gitlab_runner' do
         )
       end
     end
+
+    context 'an additive-widened range: two contiguous entries summing to the count' do
+      let(:params) { base_params }
+      let(:facts) do
+        subid_facts([{ 'start' => 231_072, 'count' => 65_536 },
+                     { 'start' => 296_608, 'count' => 100_000 }])
+      end
+
+      it 'is satisfied: no widen and no advisory' do
+        expect(module_warnings).to be_empty
+        %w[subuid subgid].each do |f|
+          is_expected.not_to contain_exec("rootless_gitlab_runner #{f} widen")
+        end
+      end
+    end
+
+    context 'an additive-widened range that a raised subid_count outgrows' do
+      let(:params) do
+        { 'rootless_docker' => struct_param('rootless_docker', 'manage' => true, 'subid_count' => 262_144),
+          'runner_account'  => account_with_uid(4242) }
+      end
+      let(:facts) do
+        subid_facts([{ 'start' => 231_072, 'count' => 65_536 },
+                     { 'start' => 296_608, 'count' => 100_000 }])
+      end
+
+      it 'adds a further tail from the covered width to the raised width' do
+        is_expected.to contain_exec('rootless_gitlab_runner subuid widen')
+          .with_command('usermod --add-subuids 396608-493215 gitlab-runner')
+          .with_onlyif("awk -F: -v u='gitlab-runner' '$1==u{s+=$3} END{exit !(s==165536)}' /etc/subuid")
+      end
+    end
+
+    context 'a gapped set of entries anchored at the declared start' do
+      let(:params) { base_params }
+      let(:facts) do
+        subid_facts([{ 'start' => 231_072, 'count' => 65_536 },
+                     { 'start' => 300_000, 'count' => 100_000 }])
+      end
+
+      it 'is not treated as contiguous: no widen, and a does-not-mirror advisory' do
+        expect(module_warnings).to include(
+          match(%r{/etc/subuid for gitlab-runner does not mirror the declared range 231072:165536}),
+        )
+        %w[subuid subgid].each do |f|
+          is_expected.not_to contain_exec("rootless_gitlab_runner #{f} widen")
+        end
+      end
+    end
   end
 
   context 'with rootless_docker.manage, a custom declared range and a narrower host range' do
@@ -787,10 +835,10 @@ describe 'rootless_gitlab_runner' do
     end
     let(:facts) { subid_facts([{ 'start' => 300_000, 'count' => 70_000 }]) }
 
-    it 'computes both inclusive bounds from the fact width and the declared width' do
+    it 'adds only the missing tail from the fact width to the declared width' do
       is_expected.to contain_exec('rootless_gitlab_runner subuid widen')
-        .with_command('usermod --del-subuids 300000-369999 --add-subuids 300000-499999 gitlab-runner')
-        .with_onlyif("grep -qxF 'gitlab-runner:300000:70000' /etc/subuid")
+        .with_command('usermod --add-subuids 370000-499999 gitlab-runner')
+        .with_onlyif("awk -F: -v u='gitlab-runner' '$1==u{s+=$3} END{exit !(s==70000)}' /etc/subuid")
     end
 
     it 'carries the declared non-default count into the summed preflight' do
