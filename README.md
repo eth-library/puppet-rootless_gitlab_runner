@@ -327,10 +327,12 @@ by construction where the module creates the account.
 With `rootless_docker.manage` on, the module brings up the rootless-Docker user daemon:
 provisions the subordinate UID/GID ranges the daemon needs (`subid_start`/`subid_count`,
 default `231072`/`165536`) and enforces `subid_count` as a grow-only minimum width. A
-module-owned range at the declared start narrower than `subid_count` is widened in place (a
-single locked `usermod` del-before-add) and the rootless daemon restarted so its user namespace
-picks up the new width; a foreign or already-wider range is never rewritten (a too-narrow
-foreign range fails the preflight, a wide-enough one warns). Widening an in-service host
+module-owned range at the declared start narrower than `subid_count` is widened in place by
+adding the missing tail as a further contiguous range: a pure `usermod --add`, which grows the
+range even while the runner user's session is live and leaves the existing mappings as an
+untouched prefix. The rootless daemon is then restarted so its user namespace picks up the new
+width; a foreign or already-wider range is never rewritten (a too-narrow foreign range fails the
+preflight, a wide-enough one warns). Widening an in-service host
 interrupts running jobs (rootless mode has no live-restore), so it is best scheduled around
 them; CI-side job `retry` covers a job caught by the restart. It then enables lingering and runs
 `dockerd-rootless-setuptool.sh install` [\[4\]](#ref-4) as the runner user (guarded on installed state, so it
