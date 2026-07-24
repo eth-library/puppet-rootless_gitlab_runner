@@ -595,11 +595,11 @@ Each runner in the Hiera node file refers to its secret by **`token_key`**, neve
 # puppet/data/nodes/<hostname>.yaml
 rootless_gitlab_runner::runners:
   - name: 'docker-socket-runner'
-    token_key: 'runner_a'        # resolved from tokens['runner_a'] at apply time
+    token_key: 'runner_a'        # resolved from runner_tokens['runner_a'] at apply time
     # ...
 ```
 
-At apply time the module merges `tokens['runner_a']` into that runner and writes it into the
+At apply time the module merges `runner_tokens['runner_a']` into that runner and writes it into the
 rendered runner config under `/etc` (`0600`). A checkout without a secret store renders blank
 tokens instead of failing, so dry-runs and CI validation work anywhere. With a secret store
 present, a `token_key` that resolves to nothing fails the apply with the key and runner

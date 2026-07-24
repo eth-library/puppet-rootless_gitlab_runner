@@ -7,17 +7,21 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-24
+
+A breaking rework of the configuration surface: settings group into per-concern structs, every default lives in the module and merges deep so node data holds only its deviations, and several values the module can derive (file ownership, socket paths, `DOCKER_HOST`) are no longer configurable parameters. A shipped Hiera data check validates consumer data against the declared parameter surface. Standalone hosts gain a self-contained runbook, a liveness healthcheck decoupled from the self-update loop, and enforced subordinate-ID widths sized for nested builds with rootless BuildKit.
+
 ### Added
 
 - An externally provisioned runner account whose primary group is named differently from the account now converges on the first apply: the new optional `runner_account.group` names the account's primary group and feeds every group ownership the module manages. It defaults to the account name, so existing hosts are unchanged.
-- A Hiera data check ships with the module: it fails on any data key that no deployed class declares, instead of Hiera silently ignoring it, and flags subkeys the module will not read under a disabled `manage` toggle with a non-failing advisory. The advisory resolves the toggle wherever it sits, including nested toggles and toggles left at their module default, and spares a subkey that merely restates the default.
+- A Hiera data check ships with the module: it fails on any data key that no deployed class declares, instead of Hiera silently ignoring it, and gives a non-failing advisory for subkeys the module will not read because their `manage` toggle is off.
 
 ### Changed
 
 - Standalone operators get a self-contained runbook: installation, applying, systemd automation, and self-update now live in `docs/standalone.md`, and the README slims to the configuration, secrets, and security model shared by every consumer.
 - The parameter surface is regrouped: five flat keys plus six parameter groups replace the 49 flat parameters. Related settings now live together, one hash per concern: `runner_account`, `configuration_file`, `packages` with its apt `sources`, `rootless_docker`, `runner_service`, and `standalone` with the nested `self_update`.
 - Every subkey ships a module default and the groups merge deep across Hiera layers, so node data holds only its deviations, and a mistyped subkey now fails the compile instead of being silently ignored.
-- The runner-token store reads as part of the runner family: `tokens` is now `runner_tokens`, alongside `runners` and `runner_defaults`. The automatic `Sensitive` wrap on lookup moves with the new key; the host's secret store file must follow the rename.
+- `tokens` was renamed to `runner_tokens`, matching `runners` and `runner_defaults`. The automatic `Sensitive` wrap on lookup moves with the new key; the host's secret store file must follow the rename.
 - The apply script now installs on any declared-standalone host (`standalone.manage: true`), not only with the self-update loop, so manual applies and the loop share the same single apply command; enabling the loop on a host not declared standalone fails at compile time.
 - The liveness healthcheck now installs on any declared-standalone host (`standalone.manage: true`), not only with the self-update loop, so a standalone host without the loop still has its manager service and rootless Docker daemon monitored (cadence `standalone.healthcheck_interval`); the loop's own supervision checks (apply-timer state, checkout staleness, bootstrap-gem presence) layer on only when the loop is enabled.
 - Freshly provisioned hosts get a 165536-wide subordinate-ID range out of the box, so nested rootless BuildKit builds work without tuning.
@@ -27,7 +31,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
-- Every parameter the module can derive is now automatic: the rendered configuration's owner and group follow `runner_account.name` (which also fixes the file staying owned by the default account name when a different account is declared), the docker socket path follows `runner_account.uid`, the no-detach-netns drop-in location follows `runner_account.home`, and the apply's manifest, module directory and Hiera configuration follow the documented control-repository layout under `standalone.control_repository_path`. `service_user` goes with them: the runner manager service always runs privilege-dropped as the runner account.
+- Every parameter the module can derive is now automatic: the rendered configuration's owner and group follow `runner_account.name`, the docker socket path follows `runner_account.uid`, the no-detach-netns drop-in location follows `runner_account.home`, and the apply's manifest, module directory and Hiera configuration follow the documented control-repository layout under `standalone.control_repository_path`. `service_user` goes with them: the runner manager service always runs privilege-dropped as the runner account.
 - Deliberate choices are no longer parameters: `runner_binary`, `service_name` and `setuptool_path` take the values their packages define, `service_kill_signal` is always `SIGQUIT` (the graceful drain), and `config_mode` and `dropin_mode` keep their former defaults.
 - `check_interval`, `connection_max_age` and `shutdown_timeout` are no longer rendered. The removed lines matched GitLab Runner's own defaults, so existing hosts behave the same.
 - `on_failure_unit` is removed; a push alert attaches as a host-side `OnFailure=` drop-in on the apply or healthcheck service.
@@ -36,6 +40,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Clearing `runner_service.environment` through data can no longer leave the runner manager without `DOCKER_HOST`; the derived socket is always present.
 - With `packages.sources.manage` on, repeated applies stop churning apt: an unchanged repository signing key is now a true no-op (no keyring rewrite, no needless `apt-get update`), while a genuine key rotation is still picked up from the vendor's rolling key endpoint and refreshes the apt index.
+- Declaring a runner account name other than the default now gives the rendered configuration file correct ownership; it previously stayed owned by the default account name.
 
 ## [1.0.0] - 2026-07-09
 
@@ -77,5 +82,6 @@ The initial release: a rootless GitLab Runner host — runner config, the rootle
 - Runner tokens are handled as sensitive values end to end, so they stay out of compiled catalogs, Puppet reports, and configuration diffs.
 - Config inputs are escaped and type-checked where they are rendered, so a malformed value in host data is rejected up front instead of producing a broken or injected configuration.
 
-[Unreleased]: https://github.com/eth-library/puppet-rootless_gitlab_runner/compare/v1.0.0...main
+[Unreleased]: https://github.com/eth-library/puppet-rootless_gitlab_runner/compare/v2.0.0...main
+[2.0.0]: https://github.com/eth-library/puppet-rootless_gitlab_runner/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/eth-library/puppet-rootless_gitlab_runner/releases/tag/v1.0.0
