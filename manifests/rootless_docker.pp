@@ -57,19 +57,22 @@ class rootless_gitlab_runner::rootless_docker {
     # --noop cannot see, and drives every outcome from that one source:
     #   create — no entry yet: write start:count (the greenfield path). Always
     #            declared and grep-guarded, so it is correct even without the fact.
-    #   widen  — one entry, at the declared start, narrower than declared: rewrite
-    #            it wider. The old width comes from the fact, so the command is
-    #            fully literal — no shell arithmetic — and the guard re-asserts
-    #            that exact line still exists, so a host changed since fact
-    #            collection is skipped, not mis-edited. shadow 4.8.1 deletes
-    #            before adding in the one locked invocation (never momentarily
-    #            absent), and widening at an unchanged start preserves every
-    #            existing inner->outer mapping (a prefix superset), so container
-    #            and image ownership is untouched.
+    #   widen  — a contiguous block anchored at the declared start but narrower
+    #            than declared: add only the missing tail as a further contiguous
+    #            range. The add is pure (no --del), so it succeeds even while the
+    #            runner user has a live session; --del would trip usermod's
+    #            running-process guard on the lingering systemd --user manager and
+    #            fail on exactly the converged hosts that need a widen. The tail
+    #            offset comes from the fact, so the command is literal, and the
+    #            guard re-asserts the covered width still matches, so a host
+    #            changed since fact collection is skipped, not double-added. The
+    #            existing lower ranges are left untouched (a prefix superset) and
+    #            rootlesskit maps every range, so the effective width is their sum
+    #            and container/image ownership is untouched.
     #   advise — everything else is neither created nor widened: a wider-than-
-    #            declared entry, or a foreign/multi-entry range wide enough in
-    #            sum, warns (declared data must mirror the host); a too-narrow
-    #            foreign range fails loud at the preflight below.
+    #            declared entry, or a foreign-start, gapped, or overlapping range
+    #            wide enough in sum, warns (declared data must mirror the host); a
+    #            too-narrow foreign range fails loud at the preflight below.
     # warning() is a log line, not a resource, so the apply stays change-free and
     # --noop clean (an exec/notify warning would report a change every apply);
     # only the exact-match state is silent. Guards test host state and exit 0/1 —
@@ -79,8 +82,8 @@ class rootless_gitlab_runner::rootless_docker {
     $subid_last   = $subid_first + $subid_count - 1
     $subid_report = $facts['rootless_gitlab_runner_subids']
     $subid_files  = {
-      'subuid' => { 'add' => '--add-subuids', 'del' => '--del-subuids' },
-      'subgid' => { 'add' => '--add-subgids', 'del' => '--del-subgids' },
+      'subuid' => { 'add' => '--add-subuids' },
+      'subgid' => { 'add' => '--add-subgids' },
     }
     $subid_files.each |$f, $flag| {
       # This file's entries, from the fact: all owners, and the runner user's own
@@ -97,14 +100,36 @@ class rootless_gitlab_runner::rootless_docker {
         before   => Exec['rootless_gitlab_runner preflight'],
       }
 
-      # widen / advise on the runner user's own entry.
-      if $ranges.length == 1 and $ranges[0]['start'] == $subid_first {
-        $have = $ranges[0]['count']
+      # widen / advise on the runner user's own entries. The create path and an
+      # additive widen both leave the runner's ranges as one contiguous block
+      # anchored at the declared start; detect that shape and its covered width by
+      # folding the ranges (ascending) from subid_first, breaking on the first
+      # gap, overlap, or foreign start.
+      $sorted = $ranges.sort |$a, $b| { $a['start'] - $b['start'] }
+      $fold   = $sorted.reduce([$subid_first, true]) |$acc, $r| {
+        ($acc[1] and $r['start'] == $acc[0]) ? {
+          true    => [$acc[0] + $r['count'], true],
+          default => [$acc[0], false],
+        }
+      }
+      $anchored = $ranges.length > 0 and $fold[1]
+      $have     = $fold[0] - $subid_first  # covered width, valid when anchored
+
+      if $anchored {
         if $have < $subid_count {
-          $old_last = $subid_first + $have - 1
+          # Grow-only, additive: add only the missing tail as a contiguous range.
+          # A pure --add succeeds even while the runner user has a live session;
+          # a --del would trip usermod's running-process guard on the lingering
+          # systemd --user manager, so delete-and-re-add fails on exactly the
+          # converged hosts that need a widen. The existing lower ranges are an
+          # untouched prefix, and rootlesskit maps every range, so the effective
+          # width is their sum. onlyif re-asserts the covered width the fact saw,
+          # so a host changed since fact collection is skipped (not double-added),
+          # and the widen no-ops once the sum reaches the count.
+          $tail_first = $subid_first + $have
           exec { "rootless_gitlab_runner ${f} widen":
-            command  => "usermod ${flag['del']} ${subid_first}-${old_last} ${flag['add']} ${subid_first}-${subid_last} ${runner_user}",
-            onlyif   => "grep -qxF '${runner_user}:${subid_first}:${have}' /etc/${f}",
+            command  => "usermod ${flag['add']} ${tail_first}-${subid_last} ${runner_user}",
+            onlyif   => "awk -F: -v u='${runner_user}' '\$1==u{s+=\$3} END{exit !(s==${have})}' /etc/${f}",
             path     => ['/usr/sbin', '/usr/bin', '/bin'],
             provider => 'shell',
             before   => Exec['rootless_gitlab_runner preflight'],
@@ -118,8 +143,9 @@ class rootless_gitlab_runner::rootless_docker {
           ], ' '))
         }
       } elsif $ranges.length > 0 {
-        # Foreign start, or multiple entries: never rewritten. Wide enough in sum
-        # warns; too narrow is caught loud by the preflight, not here.
+        # Not an anchored contiguous block: a foreign start, a gap, or an internal
+        # overlap. Never rewritten. Wide enough in sum warns; too narrow is caught
+        # loud by the preflight, not here.
         $summed = $ranges.reduce(0) |$m, $r| { $m + $r['count'] }
         if $summed >= $subid_count {
           warning(join([
