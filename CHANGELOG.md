@@ -27,7 +27,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Removed
 
-- Every parameter the module can derive is now automatic: the rendered configuration's owner and group follow `runner_account.name` (which also fixes the file staying owned by the default account name when a different account is declared), the docker socket path follows `runner_account.uid`, the no-detach-netns drop-in location follows `runner_account.home`, and the apply's manifest, module directory and Hiera configuration follow the documented control-repository layout under `standalone.control_repository_path`. `service_user` goes with them: the runner manager service always runs privilege-dropped as the runner account.
+- Every parameter the module can derive is now automatic: the rendered configuration's owner and group follow `runner_account.name`, the docker socket path follows `runner_account.uid`, the no-detach-netns drop-in location follows `runner_account.home`, and the apply's manifest, module directory and Hiera configuration follow the documented control-repository layout under `standalone.control_repository_path`. `service_user` goes with them: the runner manager service always runs privilege-dropped as the runner account.
 - Deliberate choices are no longer parameters: `runner_binary`, `service_name` and `setuptool_path` take the values their packages define, `service_kill_signal` is always `SIGQUIT` (the graceful drain), and `config_mode` and `dropin_mode` keep their former defaults.
 - `check_interval`, `connection_max_age` and `shutdown_timeout` are no longer rendered. The removed lines matched GitLab Runner's own defaults, so existing hosts behave the same.
 - `on_failure_unit` is removed; a push alert attaches as a host-side `OnFailure=` drop-in on the apply or healthcheck service.
@@ -36,6 +36,7 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - Clearing `runner_service.environment` through data can no longer leave the runner manager without `DOCKER_HOST`; the derived socket is always present.
 - With `packages.sources.manage` on, repeated applies stop churning apt: an unchanged repository signing key is now a true no-op (no keyring rewrite, no needless `apt-get update`), while a genuine key rotation is still picked up from the vendor's rolling key endpoint and refreshes the apt index.
+- Declaring a runner account name other than the default now gives the rendered configuration file correct ownership; it previously stayed owned by the default account name.
 
 ## [1.0.0] - 2026-07-09
 
