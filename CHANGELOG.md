@@ -7,6 +7,10 @@ module follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-24
+
+A breaking rework of the configuration surface: settings group into per-concern structs, every default lives in the module and merges deep so node data holds only its deviations, and several values the module can derive (file ownership, socket paths, `DOCKER_HOST`) are no longer configurable parameters. A shipped Hiera data check validates consumer data against the declared parameter surface. Standalone hosts gain a self-contained runbook, a liveness healthcheck decoupled from the self-update loop, and enforced subordinate-ID widths sized for nested builds with rootless BuildKit.
+
 ### Added
 
 - An externally provisioned runner account whose primary group is named differently from the account now converges on the first apply: the new optional `runner_account.group` names the account's primary group and feeds every group ownership the module manages. It defaults to the account name, so existing hosts are unchanged.
@@ -78,5 +82,6 @@ The initial release: a rootless GitLab Runner host — runner config, the rootle
 - Runner tokens are handled as sensitive values end to end, so they stay out of compiled catalogs, Puppet reports, and configuration diffs.
 - Config inputs are escaped and type-checked where they are rendered, so a malformed value in host data is rejected up front instead of producing a broken or injected configuration.
 
-[Unreleased]: https://github.com/eth-library/puppet-rootless_gitlab_runner/compare/v1.0.0...main
+[Unreleased]: https://github.com/eth-library/puppet-rootless_gitlab_runner/compare/v2.0.0...main
+[2.0.0]: https://github.com/eth-library/puppet-rootless_gitlab_runner/compare/v1.0.0...v2.0.0
 [1.0.0]: https://github.com/eth-library/puppet-rootless_gitlab_runner/releases/tag/v1.0.0
