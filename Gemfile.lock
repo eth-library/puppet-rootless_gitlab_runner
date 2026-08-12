@@ -76,7 +76,7 @@ GEM
       puppet (>= 8.0.0)
       rgen (~> 0.9)
       yard (~> 0.9)
-    puppet_fixtures (2.2.2)
+    puppet_fixtures (2.2.3)
       logger (< 2)
       rake (~> 13.0)
     racc (1.8.1)
