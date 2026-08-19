@@ -10,10 +10,10 @@ source 'https://rubygems.org'
 # other versions rather than deep in a load error; 3.4+ is untested here.
 ruby '>= 3.3.0', '< 3.4.0'
 
-gem 'metadata-json-lint', '~> 5.0'
+gem 'metadata-json-lint', '~> 5.1'
 gem 'puppet', '~> 8.10'
 gem 'puppet-lint', '~> 5.1'
-gem 'puppet-strings', '~> 5.0' # generates REFERENCE.md (`just docs`)
+gem 'puppet-strings', '~> 5.1' # generates REFERENCE.md (`just docs`)
 gem 'puppet_fixtures', '~> 2.2' # `puppet-fixtures install`: fixture modules per .fixtures.yml
 gem 'rspec-puppet', '~> 5.0'
 gem 'rspec-puppet-facts', '~> 6.0' # on_supported_os: facts from metadata.json (via facterdb)
