@@ -93,7 +93,7 @@ GEM
     rspec-mocks (3.13.8)
       diff-lcs (>= 1.2.0, < 2.0)
       rspec-support (~> 3.13.0)
-    rspec-puppet (5.0.0)
+    rspec-puppet (5.0.1)
       rspec (~> 3.0)
     rspec-puppet-facts (6.2.0)
       deep_merge (~> 1.2)
