@@ -57,13 +57,15 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: vendor/bundle
-          # Gems install under an ABI-versioned path, so a Ruby bump (a flake.lock
-          # change) must miss the cache; key on the Ruby series too, not just
-          # Gemfile.lock. restore-keys lets a Gemfile.lock change reuse the last
-          # good bundle for the same Ruby instead of reinstalling from scratch.
-          key: gems-${{ runner.os }}-${{ hashFiles('flake.lock', 'Gemfile.lock') }}
+          # Native gem extensions (syslog, fiddle) link against the exact Nix
+          # store paths of ruby and libffi, so a bundle is reusable only inside
+          # the same Nix environment. The key and the restore prefix both carry
+          # the dev-shell hash (the Nix files and flake.lock): a flake change
+          # always starts a fresh bundle, while a Gemfile.lock-only change still
+          # reuses the last bundle built for the same environment.
+          key: gems-${{ runner.os }}-${{ hashFiles('**/*.nix', 'flake.lock') }}-${{ hashFiles('Gemfile.lock') }}
           restore-keys: |
-            gems-${{ runner.os }}-
+            gems-${{ runner.os }}-${{ hashFiles('**/*.nix', 'flake.lock') }}-
 
       - name: Validate, lint, metadata, docs freshness
         run: >-
@@ -100,13 +102,15 @@ jobs:
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
         with:
           path: vendor/bundle
-          # Gems install under an ABI-versioned path, so a Ruby bump (a flake.lock
-          # change) must miss the cache; key on the Ruby series too, not just
-          # Gemfile.lock. restore-keys lets a Gemfile.lock change reuse the last
-          # good bundle for the same Ruby instead of reinstalling from scratch.
-          key: gems-${{ runner.os }}-${{ hashFiles('flake.lock', 'Gemfile.lock') }}
+          # Native gem extensions (syslog, fiddle) link against the exact Nix
+          # store paths of ruby and libffi, so a bundle is reusable only inside
+          # the same Nix environment. The key and the restore prefix both carry
+          # the dev-shell hash (the Nix files and flake.lock): a flake change
+          # always starts a fresh bundle, while a Gemfile.lock-only change still
+          # reuses the last bundle built for the same environment.
+          key: gems-${{ runner.os }}-${{ hashFiles('**/*.nix', 'flake.lock') }}-${{ hashFiles('Gemfile.lock') }}
           restore-keys: |
-            gems-${{ runner.os }}-
+            gems-${{ runner.os }}-${{ hashFiles('**/*.nix', 'flake.lock') }}-
 
       - name: Run unit tests
         run: nix develop --command sh -c 'just install && just test'
